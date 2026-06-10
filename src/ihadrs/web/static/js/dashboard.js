@@ -9,11 +9,14 @@
 // ── CONFIG ─────────────────────────────────────────────────
 const DEFAULT_URL      = 'http://127.0.0.1:8765';
 const DEFAULT_INTERVAL = 3000;
+const DEFAULT_THEME    = 'dark';
+const WORKFLOW_STATUSES = ['new', 'acknowledged', 'investigating', 'remediated', 'false_positive'];
 
 let cfg = {
   url:      localStorage.getItem('ihadrs_url')      || DEFAULT_URL,
   token:    localStorage.getItem('ihadrs_token')    || '',
   interval: parseInt(localStorage.getItem('ihadrs_interval') || DEFAULT_INTERVAL),
+  theme:    localStorage.getItem('ihadrs_theme')    || DEFAULT_THEME,
 };
 
 // ── STATE ───────────────────────────────────────────────────
@@ -26,6 +29,9 @@ let state = {
   status:    {},
   selectedThreatIdx: -1,
   secureops: {},
+  workflow: loadWorkflowState(),
+  selectedThreatIds: new Set(),
+  filteredThreats: [],
 };
 
 let pollTimer = null;
@@ -42,6 +48,21 @@ const el = (tag, cls, html) => {
 const esc = s => String(s)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;')
   .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const jsArg = value => JSON.stringify(String(value || ''));
+
+function applyTheme(theme) {
+  cfg.theme = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = cfg.theme;
+  localStorage.setItem('ihadrs_theme', cfg.theme);
+  const btn = $('theme-toggle');
+  if (btn) btn.textContent = cfg.theme === 'light' ? 'Dark' : 'Light';
+}
+
+function toggleTheme() {
+  applyTheme(cfg.theme === 'light' ? 'dark' : 'light');
+}
+
+applyTheme(cfg.theme);
 
 // ── CLOCK ───────────────────────────────────────────────────
 function tickClock() {
@@ -198,6 +219,8 @@ function renderSecureOpsStatus(data) {
 }
 
 $('settings-toggle').onclick = openSettings;
+$('theme-toggle').onclick = toggleTheme;
+window.toggleTheme = toggleTheme;
 window.openSettings    = openSettings;
 window.closeSettings   = closeSettings;
 window.saveSettings    = saveSettings;
@@ -213,6 +236,9 @@ function switchTab(name) {
   if (name === 'rules' && state.rules.length === 0) fetchRules();
 }
 $$('.tab-btn').forEach(btn => btn.onclick = () => switchTab(btn.dataset.tab));
+if ($('select-all-alerts')) {
+  $('select-all-alerts').onchange = e => toggleAllAlerts(e.target.checked);
+}
 window.switchTab = switchTab;
 
 // ── FETCH HELPERS ───────────────────────────────────────────
@@ -325,7 +351,7 @@ function updateMetrics(stats) {
 
 // ── ALERT BADGE ───────────────────────────────────────────────
 function updateAlertBadge() {
-  const active = state.threats.filter(t => !t.false_positive?.marked).length;
+  const active = state.threats.filter(t => !isFalsePositive(t)).length;
   const badge = $('alert-badge');
   badge.textContent = active > 0 ? active : '';
 }
@@ -369,38 +395,193 @@ function renderCategoryBars(stats) {
 }
 
 // ── ALERTS TAB ────────────────────────────────────────────────
+function loadWorkflowState() {
+  try {
+    return JSON.parse(localStorage.getItem('ihadrs_alert_workflow') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveWorkflowState() {
+  localStorage.setItem('ihadrs_alert_workflow', JSON.stringify(state.workflow));
+}
+
+function threatId(t) {
+  return String(t?.threat_id || t?.alert_id || '');
+}
+
+function getWorkflow(id) {
+  if (!id) return { status: 'new', notes: [] };
+  if (!state.workflow[id]) {
+    state.workflow[id] = { status: 'new', notes: [] };
+  }
+  if (!WORKFLOW_STATUSES.includes(state.workflow[id].status)) {
+    state.workflow[id].status = 'new';
+  }
+  if (!Array.isArray(state.workflow[id].notes)) {
+    state.workflow[id].notes = [];
+  }
+  return state.workflow[id];
+}
+
+function isFalsePositive(t) {
+  const id = threatId(t);
+  return !!t.false_positive?.marked || getWorkflow(id).status === 'false_positive';
+}
+
+function workflowLabel(status) {
+  return {
+    new: 'NEW',
+    acknowledged: 'ACKNOWLEDGED',
+    investigating: 'INVESTIGATING',
+    remediated: 'REMEDIATED',
+    false_positive: 'FALSE POSITIVE',
+  }[status] || 'NEW';
+}
+
+function workflowChip(status) {
+  const normalized = WORKFLOW_STATUSES.includes(status) ? status : 'new';
+  return `<span class="workflow-chip workflow-${normalized}">${workflowLabel(normalized)}</span>`;
+}
+
+function workflowOptions(selected) {
+  return WORKFLOW_STATUSES.map(status =>
+    `<option value="${status}" ${status === selected ? 'selected' : ''}>${workflowLabel(status)}</option>`
+  ).join('');
+}
+
+function setAlertStatus(id, status) {
+  if (!id || !WORKFLOW_STATUSES.includes(status)) return;
+  const workflow = getWorkflow(id);
+  workflow.status = status;
+  workflow.updated_at = new Date().toISOString();
+  saveWorkflowState();
+  filterAlerts();
+  const selected = state.threats.find(t => threatId(t) === id);
+  if (selected) renderAlertDetail(selected);
+  toast(`Alert marked ${workflowLabel(status).toLowerCase()}.`);
+}
+
+function toggleAlertSelection(id, checked) {
+  if (!id) return;
+  if (checked) state.selectedThreatIds.add(id);
+  else state.selectedThreatIds.delete(id);
+  updateAlertSelectionUi();
+}
+
+function toggleAllAlerts(checked) {
+  state.filteredThreats.forEach(t => {
+    const id = threatId(t);
+    if (!id) return;
+    if (checked) state.selectedThreatIds.add(id);
+    else state.selectedThreatIds.delete(id);
+  });
+  filterAlerts();
+}
+
+function updateAlertSelectionUi() {
+  const count = state.selectedThreatIds.size;
+  const total = state.filteredThreats.length;
+  const footer = $('alerts-count');
+  if (footer) footer.textContent = `${total} alert(s) | ${count} selected`;
+  const all = $('select-all-alerts');
+  if (all) {
+    all.checked = total > 0 && state.filteredThreats.every(t => state.selectedThreatIds.has(threatId(t)));
+    all.indeterminate = count > 0 && !all.checked;
+  }
+}
+
+function bulkSetStatus(status) {
+  if (!WORKFLOW_STATUSES.includes(status)) return;
+  if (!state.selectedThreatIds.size) {
+    toast('Select at least one alert first.');
+    return;
+  }
+  state.selectedThreatIds.forEach(id => {
+    const workflow = getWorkflow(id);
+    workflow.status = status;
+    workflow.updated_at = new Date().toISOString();
+  });
+  saveWorkflowState();
+  filterAlerts();
+  toast(`${state.selectedThreatIds.size} alert(s) updated.`);
+}
+
+function renderNotes(id) {
+  const notes = getWorkflow(id).notes;
+  if (!notes.length) {
+    return '<div class="notes-list"><div class="note-item"><div class="note-body" style="color:var(--muted)">No analyst notes yet.</div></div></div>';
+  }
+  return `<div class="notes-list">${notes.map(note => `
+    <div class="note-item">
+      <div class="note-meta">${fmtTimeFull(note.created_at)}</div>
+      <div class="note-body">${esc(note.text)}</div>
+    </div>`).join('')}</div>`;
+}
+
+function addAlertNote(id) {
+  const input = $('alert-note-input');
+  const text = (input?.value || '').trim();
+  if (!id || !text) {
+    toast('Write a note first.');
+    return;
+  }
+  const workflow = getWorkflow(id);
+  workflow.notes.unshift({ text, created_at: new Date().toISOString() });
+  workflow.updated_at = new Date().toISOString();
+  saveWorkflowState();
+  const selected = state.threats.find(t => threatId(t) === id);
+  if (selected) renderAlertDetail(selected);
+  toast('Note added.');
+}
+
+window.setAlertStatus = setAlertStatus;
+window.toggleAlertSelection = toggleAlertSelection;
+window.toggleAllAlerts = toggleAllAlerts;
+window.bulkSetStatus = bulkSetStatus;
+window.addAlertNote = addAlertNote;
+
 function filterAlerts() {
   const q      = $('alert-search').value.toLowerCase();
   const sevF   = $('alert-sev-filter').value;
+  const statusF = $('alert-status-filter').value;
   const showFP = $('show-fp').checked;
 
   const filtered = state.threats.filter(t => {
-    if (!showFP && t.false_positive?.marked) return false;
+    const id = threatId(t);
+    const workflow = getWorkflow(id);
+    if (!showFP && isFalsePositive(t)) return false;
     if (sevF && t.severity !== sevF) return false;
+    if (statusF && workflow.status !== statusF) return false;
     if (q) {
       const hay = [t.summary, t.attack_category, t.affected_resource,
-                   t.severity, t.threat_id].join(' ').toLowerCase();
+                   t.severity, t.threat_id, workflow.status].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
   });
+  state.filteredThreats = filtered;
 
   const tbody = $('alerts-table').querySelector('tbody');
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">No matching alerts.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No matching alerts.</td></tr>';
     $('alerts-count').textContent = '0 alerts';
+    updateAlertSelectionUi();
     return;
   }
   tbody.innerHTML = filtered.map((t, i) => `
     <tr data-idx="${i}" class="${state.selectedThreatIdx === i ? 'selected' : ''}"
         onclick="selectAlert(${i})">
+      <td><input class="row-select" type="checkbox" ${state.selectedThreatIds.has(threatId(t)) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleAlertSelection(${jsArg(threatId(t))}, this.checked)" /></td>
       <td>${fmtTime(t.timestamp)}</td>
       <td>${severityChip(t.severity)}</td>
+      <td>${workflowChip(getWorkflow(threatId(t)).status)}</td>
       <td>${esc(t.attack_category || '-')}</td>
       <td>${esc((t.affected_resource || '').substring(0,45))}</td>
     </tr>`).join('');
 
-  $('alerts-count').textContent = `${filtered.length} alert(s)`;
+  updateAlertSelectionUi();
 
   // Re-apply selection
   if (state.selectedThreatIdx >= 0 && state.selectedThreatIdx < filtered.length) {
@@ -420,13 +601,17 @@ window.selectAlert = selectAlert;
 function getFilteredAlerts() {
   const q    = $('alert-search').value.toLowerCase();
   const sevF = $('alert-sev-filter').value;
+  const statusF = $('alert-status-filter').value;
   const showFP = $('show-fp').checked;
   return state.threats.filter(t => {
-    if (!showFP && t.false_positive?.marked) return false;
+    const id = threatId(t);
+    const workflow = getWorkflow(id);
+    if (!showFP && isFalsePositive(t)) return false;
     if (sevF && t.severity !== sevF) return false;
+    if (statusF && workflow.status !== statusF) return false;
     if (q) {
       const hay = [t.summary, t.attack_category, t.affected_resource,
-                   t.severity, t.threat_id].join(' ').toLowerCase();
+                   t.severity, t.threat_id, workflow.status].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -434,6 +619,8 @@ function getFilteredAlerts() {
 }
 
 function renderAlertDetail(t) {
+  const id      = threatId(t);
+  const flow    = getWorkflow(id);
   const mitre   = t.mitre || {};
   const expl    = t.explanation || {};
   const steps   = t.remediation || [];
@@ -478,6 +665,16 @@ Elevated: ${pc.is_elevated ? 'Yes' : 'No'}${pc.sha256 ? '\nSHA256:  '+esc(pc.sha
       </div>
 
       <div class="detail-section">
+        <h4>Operator Workflow</h4>
+        <div class="detail-control-row">
+          <select class="filter-select workflow-select" onchange="setAlertStatus(${jsArg(id)}, this.value)">
+            ${workflowOptions(flow.status)}
+          </select>
+          ${workflowChip(flow.status)}
+        </div>
+      </div>
+
+      <div class="detail-section">
         <h4>Technical Details</h4>
         <pre>${esc(expl.technical||'—')}</pre>
       </div>
@@ -494,10 +691,22 @@ Elevated: ${pc.is_elevated ? 'Yes' : 'No'}${pc.sha256 ? '\nSHA256:  '+esc(pc.sha
         ${remHtml}
       </div>
 
+      <div class="detail-section">
+        <h4>Analyst Notes</h4>
+        <textarea id="alert-note-input" class="note-input" placeholder="Add investigation notes, triage context, or next steps..."></textarea>
+        <div class="detail-actions" style="border-top:0;padding-top:8px">
+          <button class="btn btn-xs" onclick="addAlertNote(${jsArg(id)})">Add Note</button>
+        </div>
+        ${renderNotes(id)}
+      </div>
+
       <div class="detail-actions">
-        <button class="btn btn-xs btn-danger" onclick="markFP('${esc(t.threat_id||'')}')">Mark False Positive</button>
-        <button class="btn btn-xs" onclick="exportSingle('${esc(t.threat_id||'')}')">Export</button>
-        ${pc?.sha256 ? `<button class="btn btn-xs" onclick="virusTotal('${esc(pc.sha256)}')">VirusTotal</button>` : ''}
+        <button class="btn btn-xs btn-danger" onclick="markFP(${jsArg(id)})">Mark False Positive</button>
+        <button class="btn btn-xs" onclick="setAlertStatus(${jsArg(id)}, 'acknowledged')">Acknowledge</button>
+        <button class="btn btn-xs" onclick="setAlertStatus(${jsArg(id)}, 'investigating')">Investigate</button>
+        <button class="btn btn-xs" onclick="setAlertStatus(${jsArg(id)}, 'remediated')">Remediate</button>
+        <button class="btn btn-xs" onclick="exportSingle(${jsArg(id)})">Export</button>
+        ${pc?.sha256 ? `<button class="btn btn-xs" onclick="virusTotal(${jsArg(pc.sha256)})">VirusTotal</button>` : ''}
       </div>
     </div>`;
 }
@@ -512,6 +721,7 @@ async function markFP(threatId) {
       headers,
       body: JSON.stringify({ marked_by: 'web_dashboard', reason: 'Marked via web UI' }),
     });
+    setAlertStatus(threatId, 'false_positive');
     toast('Marked as false positive.');
     poll();
   } catch(e) { toast('Error: ' + e.message); }
@@ -526,12 +736,32 @@ window.virusTotal = virusTotal;
 function exportSingle(threatId) {
   const t = state.threats.find(x => x.threat_id === threatId);
   if (!t) return;
-  downloadJSON([t], `threat_${threatId.substring(0,8)}.json`);
+  downloadJSON([withWorkflow(t)], `threat_${threatId.substring(0,8)}.json`);
 }
 window.exportSingle = exportSingle;
 
+function withWorkflow(t) {
+  const id = threatId(t);
+  return {
+    ...t,
+    operator_workflow: getWorkflow(id),
+  };
+}
+
+function exportSelectedAlerts() {
+  const selected = state.threats
+    .filter(t => state.selectedThreatIds.has(threatId(t)))
+    .map(withWorkflow);
+  if (!selected.length) {
+    toast('Select at least one alert first.');
+    return;
+  }
+  downloadJSON(selected, 'ihadrs_selected_alerts.json');
+}
+window.exportSelectedAlerts = exportSelectedAlerts;
+
 function exportAlerts() {
-  downloadJSON(getFilteredAlerts(), 'ihadrs_alerts.json');
+  downloadJSON(getFilteredAlerts().map(withWorkflow), 'ihadrs_alerts.json');
 }
 window.exportAlerts = exportAlerts;
 

@@ -4,6 +4,8 @@
   --surface: #111318;
   --surface-2: #171a21;
   --surface-3: #1d212a;
+  --code-bg: #090a0d;
+  --code-text: #d7e0ea;
   --border: #2a2f3a;
   --border-strong: #3a414e;
   --accent: #f12b1c;
@@ -21,6 +23,29 @@
   --mono: "Cascadia Mono", "Consolas", "Courier New", monospace;
   --radius: 8px;
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-3: #eef1f5;
+  --code-bg: #f0f3f7;
+  --code-text: #111827;
+  --border: #d8dde5;
+  --border-strong: #bcc5d2;
+  --accent: #d92719;
+  --accent-dark: #a91712;
+  --accent-soft: rgba(217, 39, 25, 0.12);
+  --text: #111827;
+  --muted: #4b5563;
+  --faint: #7b8494;
+  --critical: #d92d20;
+  --high: #b65f00;
+  --medium: #8a6a00;
+  --low: #067647;
+  --info: #087f8c;
+  --shadow: 0 12px 32px rgba(15, 23, 42, 0.1);
 }
 
 *, *::before, *::after {
@@ -61,7 +86,7 @@ button {
   gap: 16px;
   height: 64px;
   padding: 0 22px;
-  background: rgba(17, 19, 24, 0.98);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.26);
 }
@@ -344,7 +369,7 @@ button {
 }
 
 .data-table thead {
-  background: #0e1014;
+  background: var(--code-bg);
 }
 
 .data-table th,
@@ -401,7 +426,7 @@ button {
 .table-footer {
   padding: 9px 12px;
   color: var(--muted);
-  background: #0e1014;
+  background: var(--code-bg);
   border-top: 1px solid var(--border);
   font-size: 11px;
 }
@@ -459,6 +484,62 @@ button {
   color: var(--muted);
   border-color: var(--border);
   background: var(--surface-2);
+}
+
+.workflow-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-new {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+
+.workflow-acknowledged {
+  color: var(--info);
+  border-color: rgba(40, 199, 199, 0.38);
+  background: rgba(40, 199, 199, 0.08);
+}
+
+.workflow-investigating {
+  color: var(--high);
+  border-color: rgba(255, 159, 10, 0.42);
+  background: rgba(255, 159, 10, 0.08);
+}
+
+.workflow-remediated {
+  color: var(--low);
+  border-color: rgba(50, 213, 131, 0.42);
+  background: rgba(50, 213, 131, 0.08);
+}
+
+.workflow-false_positive {
+  color: var(--faint);
+  border-color: var(--border);
+  background: transparent;
+}
+
+.workflow-select {
+  width: 100%;
+  max-width: 220px;
+}
+
+.row-select,
+#select-all-alerts {
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .toolbar {
@@ -551,6 +632,10 @@ button {
 .btn-ghost:hover {
   color: var(--text);
   background: var(--surface-2);
+}
+
+#theme-toggle {
+  min-width: 64px;
 }
 
 .btn-xs {
@@ -658,8 +743,8 @@ button {
   margin: 0;
   padding: 12px;
   overflow-x: auto;
-  color: #d7e0ea;
-  background: #090a0d;
+  color: var(--code-text);
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-family: var(--mono);
@@ -674,6 +759,58 @@ button {
   gap: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.detail-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.note-input {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  padding: 10px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+}
+
+.note-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.note-item {
+  padding: 9px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.note-meta {
+  margin-bottom: 5px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.note-body {
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .mitre-pill {
@@ -717,8 +854,8 @@ button {
   display: block;
   margin-top: 7px;
   padding: 7px 9px;
-  color: #d7e0ea;
-  background: #090a0d;
+  color: var(--code-text);
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-family: var(--mono);
@@ -749,7 +886,7 @@ button {
 .cat-bar-track {
   height: 9px;
   overflow: hidden;
-  background: #090a0d;
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 999px;
 }

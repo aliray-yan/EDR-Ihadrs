@@ -22,6 +22,7 @@
     </div>
     <div class="header-right">
       <span id="clock" class="clock"></span>
+      <button class="btn btn-ghost" id="theme-toggle" title="Toggle theme">Light</button>
       <button class="btn btn-ghost" id="settings-toggle" title="Settings">Settings</button>
     </div>
   </header>
@@ -130,9 +131,22 @@
           <option value="MEDIUM">Medium</option>
           <option value="LOW">Low</option>
         </select>
+        <select id="alert-status-filter" class="filter-select" onchange="filterAlerts()">
+          <option value="">All Statuses</option>
+          <option value="new">New</option>
+          <option value="acknowledged">Acknowledged</option>
+          <option value="investigating">Investigating</option>
+          <option value="remediated">Remediated</option>
+          <option value="false_positive">False Positive</option>
+        </select>
         <label class="checkbox-label">
           <input type="checkbox" id="show-fp" onchange="filterAlerts()" /> Show FP
         </label>
+        <button class="btn btn-xs" onclick="bulkSetStatus('acknowledged')">Acknowledge</button>
+        <button class="btn btn-xs" onclick="bulkSetStatus('investigating')">Investigate</button>
+        <button class="btn btn-xs" onclick="bulkSetStatus('remediated')">Remediate</button>
+        <button class="btn btn-xs btn-danger" onclick="bulkSetStatus('false_positive')">Mark FP</button>
+        <button class="btn btn-xs" onclick="exportSelectedAlerts()">Export Selected</button>
         <button class="btn btn-xs" onclick="exportAlerts()">Export JSON</button>
       </div>
 
@@ -140,8 +154,8 @@
         <!-- Alert list -->
         <div class="split-left">
           <table class="data-table selectable" id="alerts-table">
-            <thead><tr><th>Time</th><th>Severity</th><th>Category</th><th>Resource</th></tr></thead>
-            <tbody><tr><td colspan="4" class="empty">No alerts.</td></tr></tbody>
+            <thead><tr><th><input type="checkbox" id="select-all-alerts" title="Select all visible alerts" /></th><th>Time</th><th>Severity</th><th>Status</th><th>Category</th><th>Resource</th></tr></thead>
+            <tbody><tr><td colspan="6" class="empty">No alerts.</td></tr></tbody>
           </table>
           <div class="table-footer" id="alerts-count">0 alerts</div>
         </div>
