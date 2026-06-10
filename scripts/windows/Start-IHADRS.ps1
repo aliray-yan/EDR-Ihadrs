@@ -288,6 +288,9 @@ if (-not (Test-Path $python)) {
 }
 
 $env:PYTHONPATH = "src"
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+$env:NO_COLOR = "1"
 $process = Start-Process `
     -FilePath $python `
     -ArgumentList @("-m", "ihadrs", "start") `
