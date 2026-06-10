@@ -20,6 +20,31 @@ ihadrs ui             # Open the PyQt6 dashboard
 # Or open http://127.0.0.1:8765 in your browser for the web dashboard
 ```
 
+## Windows Clickable Install
+
+To use IHADRS like a normal Windows app, double-click:
+
+```text
+Install IHADRS.cmd
+```
+
+The installer creates:
+
+- Desktop shortcut: `IHADRS EDR`
+- Start Menu folder: `IHADRS EDR`
+- Start shortcut, dashboard shortcut, and stop shortcut
+
+After that, launch IHADRS from the Desktop or Start Menu. Windows will ask for
+Administrator approval on launch because endpoint monitoring needs system-level
+access. The launcher starts IHADRS in the background, opens
+`http://127.0.0.1:8765/`, and writes launcher/runtime logs under `logs/`.
+
+To remove the shortcuts, double-click:
+
+```text
+Uninstall IHADRS Shortcuts.cmd
+```
+
 ## SecureOps SOC Export
 
 IHADRS can push Windows detections into SecureOps with the EDR ingest API.
