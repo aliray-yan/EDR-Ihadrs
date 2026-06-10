@@ -42,12 +42,12 @@ function Write-LaunchLog {
 
 function Get-AppBrowserPath {
     $candidates = @(
-        (Join-Path ${env:ProgramFiles(x86)} "Microsoft\Edge\Application\msedge.exe"),
-        (Join-Path $env:ProgramFiles "Microsoft\Edge\Application\msedge.exe"),
-        (Join-Path $env:LocalAppData "Microsoft\Edge\Application\msedge.exe"),
         (Join-Path $env:ProgramFiles "Google\Chrome\Application\chrome.exe"),
         (Join-Path ${env:ProgramFiles(x86)} "Google\Chrome\Application\chrome.exe"),
-        (Join-Path $env:LocalAppData "Google\Chrome\Application\chrome.exe")
+        (Join-Path $env:LocalAppData "Google\Chrome\Application\chrome.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Microsoft\Edge\Application\msedge.exe"),
+        (Join-Path $env:ProgramFiles "Microsoft\Edge\Application\msedge.exe"),
+        (Join-Path $env:LocalAppData "Microsoft\Edge\Application\msedge.exe")
     )
 
     foreach ($candidate in $candidates) {
@@ -56,7 +56,7 @@ function Get-AppBrowserPath {
         }
     }
 
-    foreach ($name in @("msedge.exe", "chrome.exe")) {
+    foreach ($name in @("chrome.exe", "msedge.exe")) {
         $command = Get-Command $name -ErrorAction SilentlyContinue
         if ($command) {
             return $command.Source
@@ -92,7 +92,7 @@ function Start-DashboardAppWindow {
 
     $browser = Get-AppBrowserPath
     if (-not $browser) {
-        Write-LaunchLog "No Edge/Chrome app-mode browser found. Falling back to the default browser."
+        Write-LaunchLog "No Chrome/Edge app-mode browser found. Falling back to the default browser."
         Start-Process $Url
         return [pscustomobject]@{
             Tracked = $false

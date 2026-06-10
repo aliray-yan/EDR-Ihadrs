@@ -50,7 +50,10 @@ $startScript = Join-Path $repoRoot "scripts\windows\Start-IHADRS.ps1"
 $dashboardScript = Join-Path $repoRoot "scripts\windows\Open-IHADRS-Dashboard.ps1"
 $stopScript = Join-Path $repoRoot "scripts\windows\Stop-IHADRS.ps1"
 $powershell = Join-Path $PSHOME "powershell.exe"
-$icon = "$env:SystemRoot\System32\imageres.dll,78"
+$icon = Join-Path $repoRoot "src\ihadrs\ui\resources\icons\ihadrs.ico"
+if (-not (Test-Path $icon)) {
+    $icon = "$env:SystemRoot\System32\imageres.dll,78"
+}
 
 Write-Host "Installing IHADRS Windows shortcuts..." -ForegroundColor Cyan
 Write-Host "Project: $repoRoot"
