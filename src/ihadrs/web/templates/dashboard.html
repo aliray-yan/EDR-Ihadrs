@@ -11,7 +11,7 @@
   <!-- ====== HEADER ====== -->
   <header class="app-header">
     <div class="header-left">
-      <span class="logo">🛡️ IHADRS</span>
+      <span class="logo"><img class="logo-mark" src="/static/img/ihadrs-icon.png" alt="" /> <span>IHADRS</span></span>
       <span class="version" id="version-badge">v—</span>
     </div>
     <div class="header-center">
@@ -22,16 +22,16 @@
     </div>
     <div class="header-right">
       <span id="clock" class="clock"></span>
-      <button class="btn btn-ghost" id="settings-toggle" title="Settings">⚙️</button>
+      <button class="btn btn-ghost" id="settings-toggle" title="Settings">Settings</button>
     </div>
   </header>
 
   <!-- ====== NAV TABS ====== -->
   <nav class="tab-bar">
-    <button class="tab-btn active" data-tab="overview">📊 Overview</button>
-    <button class="tab-btn" data-tab="alerts">🚨 Alerts <span class="badge" id="alert-badge">0</span></button>
-    <button class="tab-btn" data-tab="events">📋 Events</button>
-    <button class="tab-btn" data-tab="rules">🔧 Rules</button>
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="alerts">Alerts <span class="badge" id="alert-badge">0</span></button>
+    <button class="tab-btn" data-tab="events">Events</button>
+    <button class="tab-btn" data-tab="rules">Rules</button>
   </nav>
 
   <!-- ====== MAIN CONTENT ====== -->
@@ -42,42 +42,42 @@
       <!-- Metric cards -->
       <div class="metric-row">
         <div class="metric-card critical">
-          <div class="metric-icon">🔴</div>
+          <div class="metric-icon">CR</div>
           <div class="metric-body">
             <div class="metric-value" id="m-critical">—</div>
             <div class="metric-label">Critical</div>
           </div>
         </div>
         <div class="metric-card high">
-          <div class="metric-icon">🟠</div>
+          <div class="metric-icon">HI</div>
           <div class="metric-body">
             <div class="metric-value" id="m-high">—</div>
             <div class="metric-label">High</div>
           </div>
         </div>
         <div class="metric-card medium">
-          <div class="metric-icon">🟡</div>
+          <div class="metric-icon">MD</div>
           <div class="metric-body">
             <div class="metric-value" id="m-medium">—</div>
             <div class="metric-label">Medium</div>
           </div>
         </div>
         <div class="metric-card low">
-          <div class="metric-icon">🟢</div>
+          <div class="metric-icon">LO</div>
           <div class="metric-body">
             <div class="metric-value" id="m-low">—</div>
             <div class="metric-label">Low</div>
           </div>
         </div>
         <div class="metric-card neutral">
-          <div class="metric-icon">⚡</div>
+          <div class="metric-icon">EV</div>
           <div class="metric-body">
             <div class="metric-value" id="m-eps">—</div>
             <div class="metric-label">Events/sec</div>
           </div>
         </div>
         <div class="metric-card neutral">
-          <div class="metric-icon">📡</div>
+          <div class="metric-icon">RL</div>
           <div class="metric-body">
             <div class="metric-value" id="m-rules">—</div>
             <div class="metric-label">Active Rules</div>
@@ -122,18 +122,18 @@
     <!-- ── ALERTS TAB ───────────────────────────────── -->
     <section id="tab-alerts" class="tab-panel">
       <div class="toolbar">
-        <input type="text" id="alert-search" class="search-box" placeholder="🔍  Search alerts…" oninput="filterAlerts()" />
+        <input type="text" id="alert-search" class="search-box" placeholder="Search alerts..." oninput="filterAlerts()" />
         <select id="alert-sev-filter" class="filter-select" onchange="filterAlerts()">
           <option value="">All Severities</option>
-          <option value="CRITICAL">🔴 Critical</option>
-          <option value="HIGH">🟠 High</option>
-          <option value="MEDIUM">🟡 Medium</option>
-          <option value="LOW">🟢 Low</option>
+          <option value="CRITICAL">Critical</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
         </select>
         <label class="checkbox-label">
           <input type="checkbox" id="show-fp" onchange="filterAlerts()" /> Show FP
         </label>
-        <button class="btn btn-xs" onclick="exportAlerts()">📄 Export JSON</button>
+        <button class="btn btn-xs" onclick="exportAlerts()">Export JSON</button>
       </div>
 
       <div class="split-panel">
@@ -149,7 +149,6 @@
         <!-- Alert detail -->
         <div class="split-right" id="alert-detail">
           <div class="detail-placeholder">
-            <div class="placeholder-icon">🔍</div>
             <div class="placeholder-text">Select an alert to view details</div>
           </div>
         </div>
@@ -159,9 +158,9 @@
     <!-- ── EVENTS TAB ───────────────────────────────── -->
     <section id="tab-events" class="tab-panel">
       <div class="toolbar">
-        <input type="text" id="event-search" class="search-box" placeholder="🔍  Search events…" oninput="filterEvents()" />
-        <button class="btn btn-xs" onclick="clearEvents()">🗑 Clear</button>
-        <button class="btn btn-xs" onclick="exportEvents()">📄 Export</button>
+        <input type="text" id="event-search" class="search-box" placeholder="Search events..." oninput="filterEvents()" />
+        <button class="btn btn-xs" onclick="clearEvents()">Clear</button>
+        <button class="btn btn-xs" onclick="exportEvents()">Export</button>
       </div>
       <table class="data-table" id="events-table">
         <thead><tr><th>Timestamp</th><th>Type</th><th>Source</th><th>Details</th></tr></thead>
@@ -173,7 +172,7 @@
     <!-- ── RULES TAB ────────────────────────────────── -->
     <section id="tab-rules" class="tab-panel">
       <div class="toolbar">
-        <input type="text" id="rule-search" class="search-box" placeholder="🔍  Search rules…" oninput="filterRules()" />
+        <input type="text" id="rule-search" class="search-box" placeholder="Search rules..." oninput="filterRules()" />
         <span id="rules-count" class="table-footer" style="margin:0 8px;">0 rules</span>
       </div>
       <table class="data-table" id="rules-table">
@@ -187,7 +186,7 @@
   <!-- ====== SETTINGS DRAWER ====== -->
   <div class="settings-drawer" id="settings-drawer">
     <div class="drawer-header">
-      <span>⚙️ Settings</span>
+      <span>Settings</span>
       <button class="btn btn-ghost" onclick="closeSettings()">✕</button>
     </div>
     <div class="drawer-body">
@@ -200,8 +199,8 @@
       <label class="form-label">Poll Interval (ms)</label>
       <input type="number" id="cfg-interval" class="form-input" value="3000" min="500" max="30000" step="500" />
 
-      <button class="btn btn-primary" onclick="saveSettings()">💾 Save &amp; Reconnect</button>
-      <button class="btn btn-ghost" onclick="testConnection()">🔗 Test Connection</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save &amp; Reconnect</button>
+      <button class="btn btn-ghost" onclick="testConnection()">Test Connection</button>
       <div id="cfg-result" class="cfg-result"></div>
 
       <div class="drawer-section">

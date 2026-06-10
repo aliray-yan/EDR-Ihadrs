@@ -76,7 +76,7 @@ function saveSettings() {
   localStorage.setItem('ihadrs_interval', cfg.interval);
   closeSettings();
   restartPolling();
-  toast('Settings saved. Reconnecting…');
+  toast('Settings saved. Reconnecting...');
 }
 async function testConnection() {
   const res = $('cfg-result');
@@ -87,10 +87,10 @@ async function testConnection() {
                           { signal: AbortSignal.timeout(3000) });
     const d = await r.json();
     res.className   = 'cfg-result ok';
-    res.textContent = `✅  Connected — version ${d.version || '?'}`;
+    res.textContent = `Connected - version ${d.version || '?'}`;
   } catch(e) {
     res.className   = 'cfg-result err';
-    res.textContent = `❌  ${e.message}`;
+    res.textContent = e.message;
   }
 }
 async function loadSecureOpsSettings() {
@@ -263,7 +263,7 @@ async function poll() {
     }
   } catch(err) {
     state.connected = false;
-    setConnectionState('error', `Disconnected — ${err.message}`);
+    setConnectionState('error', `Disconnected - ${err.message}`);
   }
 }
 
@@ -297,7 +297,7 @@ function updateStatus(status) {
 
   const det = status.detection || {};
   $('m-eps').textContent   = (det.events_per_second || 0).toFixed(2);
-  $('m-rules').textContent = det.rule_count || '—';
+  $('m-rules').textContent = det.rule_count || '-';
 
   const monitors = status.monitors || [];
   const tbody = $('monitor-table').querySelector('tbody');
@@ -308,7 +308,7 @@ function updateStatus(status) {
   tbody.innerHTML = monitors.map(m => `
     <tr>
       <td>${esc(m.name || '')}</td>
-      <td><span class="${m.running ? 'sev-LOW' : 'sev-CRITICAL'}">${m.running ? '🟢 Running' : '🔴 Stopped'}</span></td>
+      <td><span class="severity-chip ${m.running ? 'severity-low' : 'severity-critical'}">${m.running ? 'RUNNING' : 'STOPPED'}</span></td>
       <td>${(m.events_published || 0).toLocaleString()}</td>
       <td>${m.errors || 0}</td>
     </tr>`).join('');
@@ -341,8 +341,8 @@ function renderRecentThreats() {
   tbody.innerHTML = recent.map(t => `
     <tr onclick="switchTab('alerts')" style="cursor:pointer">
       <td>${fmtTime(t.timestamp)}</td>
-      <td class="sev-${esc(t.severity || '')}">${sevIcon(t.severity)} ${esc(t.severity || '—')}</td>
-      <td>${esc(t.attack_category || '—')}</td>
+      <td>${severityChip(t.severity)}</td>
+      <td>${esc(t.attack_category || '-')}</td>
       <td>${esc((t.affected_resource || '').substring(0,40))}</td>
       <td>${((t.confidence || 0) * 100).toFixed(0)}%</td>
     </tr>`).join('');
@@ -395,8 +395,8 @@ function filterAlerts() {
     <tr data-idx="${i}" class="${state.selectedThreatIdx === i ? 'selected' : ''}"
         onclick="selectAlert(${i})">
       <td>${fmtTime(t.timestamp)}</td>
-      <td class="sev-${esc(t.severity || '')}">${sevIcon(t.severity)} ${esc(t.severity || '—')}</td>
-      <td>${esc(t.attack_category || '—')}</td>
+      <td>${severityChip(t.severity)}</td>
+      <td>${esc(t.attack_category || '-')}</td>
       <td>${esc((t.affected_resource || '').substring(0,45))}</td>
     </tr>`).join('');
 
@@ -463,12 +463,12 @@ Elevated: ${pc.is_elevated ? 'Yes' : 'No'}${pc.sha256 ? '\nSHA256:  '+esc(pc.sha
   $('alert-detail').innerHTML = `
     <div class="detail-panel">
       <div class="detail-title sev-${esc(t.severity||'')}">
-        ${sevIcon(t.severity)} ${esc(t.severity||'—')}: ${esc(t.attack_category||'—')}
+        ${severityChip(t.severity)} ${esc(t.attack_category||'-')}
       </div>
       <div class="detail-meta">
-        ID: ${esc((t.threat_id||'').substring(0,16))}…  ·
-        Confidence: ${((t.confidence||0)*100).toFixed(0)}%  ·
-        ${fmtTimeFull(t.timestamp)}  ·
+        ID: ${esc((t.threat_id||'').substring(0,16))}...  |
+        Confidence: ${((t.confidence||0)*100).toFixed(0)}%  |
+        ${fmtTimeFull(t.timestamp)}  |
         Host: ${esc(t.hostname||'unknown')}
       </div>
 
@@ -495,9 +495,9 @@ Elevated: ${pc.is_elevated ? 'Yes' : 'No'}${pc.sha256 ? '\nSHA256:  '+esc(pc.sha
       </div>
 
       <div class="detail-actions">
-        <button class="btn btn-xs btn-danger" onclick="markFP('${esc(t.threat_id||'')}')">✓ Mark False Positive</button>
-        <button class="btn btn-xs" onclick="exportSingle('${esc(t.threat_id||'')}')">📄 Export</button>
-        ${pc?.sha256 ? `<button class="btn btn-xs" onclick="virusTotal('${esc(pc.sha256)}')">🔍 VirusTotal</button>` : ''}
+        <button class="btn btn-xs btn-danger" onclick="markFP('${esc(t.threat_id||'')}')">Mark False Positive</button>
+        <button class="btn btn-xs" onclick="exportSingle('${esc(t.threat_id||'')}')">Export</button>
+        ${pc?.sha256 ? `<button class="btn btn-xs" onclick="virusTotal('${esc(pc.sha256)}')">VirusTotal</button>` : ''}
       </div>
     </div>`;
 }
@@ -597,10 +597,10 @@ function renderRules() {
     <tr>
       <td><code>${esc(r.rule_id||'')}</code></td>
       <td>${esc(r.name||'')}</td>
-      <td class="sev-${esc(r.severity||'')}">${esc(r.severity||'—')}</td>
-      <td>${esc(r.attack_category||'—')}</td>
+      <td>${severityChip(r.severity)}</td>
+      <td>${esc(r.attack_category||'-')}</td>
       <td>${(r.mitre_techniques||[]).map(t=>`<span class="mitre-pill">${esc(t)}</span>`).join('')}</td>
-      <td>${r.enabled ? '✅' : '❌'}</td>
+      <td><span class="severity-chip ${r.enabled ? 'severity-low' : 'severity-info'}">${r.enabled ? 'ENABLED' : 'DISABLED'}</span></td>
     </tr>`).join('');
 }
 
@@ -608,12 +608,19 @@ function filterRules() { renderRules(); }
 window.filterRules = filterRules;
 
 // ── UTILITIES ─────────────────────────────────────────────────
-function sevIcon(sev) {
-  return { CRITICAL:'🔴', HIGH:'🟠', MEDIUM:'🟡', LOW:'🟢' }[sev] || '⚪';
+function severityChip(sev) {
+  const normalized = String(sev || 'INFO').toUpperCase();
+  const className = {
+    CRITICAL: 'severity-critical',
+    HIGH: 'severity-high',
+    MEDIUM: 'severity-medium',
+    LOW: 'severity-low',
+  }[normalized] || 'severity-info';
+  return `<span class="severity-chip ${className}">${esc(normalized)}</span>`;
 }
 
 function fmtTime(ts) {
-  if (!ts) return '—';
+  if (!ts) return '-';
   try {
     const d = new Date(ts);
     return d.toLocaleString('en-GB', { month:'2-digit', day:'2-digit',
@@ -622,7 +629,7 @@ function fmtTime(ts) {
 }
 
 function fmtTimeFull(ts) {
-  if (!ts) return '—';
+  if (!ts) return '-';
   try { return new Date(ts).toLocaleString(); }
   catch { return ts; }
 }
