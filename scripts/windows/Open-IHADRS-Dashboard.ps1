@@ -29,9 +29,4 @@ function Test-PortOpen {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $startScript = Join-Path $repoRoot "scripts\windows\Start-IHADRS.ps1"
 
-if (-not (Test-PortOpen -HostName "127.0.0.1" -Port 8765)) {
-    & $startScript
-    exit
-}
-
-Start-Process $DashboardUrl
+& $startScript -DashboardUrl $DashboardUrl

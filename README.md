@@ -36,8 +36,10 @@ The installer creates:
 
 After that, launch IHADRS from the Desktop or Start Menu. Windows will ask for
 Administrator approval on launch because endpoint monitoring needs system-level
-access. The launcher starts IHADRS in the background, opens
-`http://127.0.0.1:8765/`, and writes launcher/runtime logs under `logs/`.
+access. The launcher starts IHADRS in the background and opens
+`http://127.0.0.1:8765/` in a dedicated app window. Closing that IHADRS window
+stops the background EDR process automatically. Launcher/runtime logs are
+written under `logs/`.
 
 To remove the shortcuts, double-click:
 

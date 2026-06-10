@@ -30,11 +30,11 @@ if (-not (Test-Path $pidFile)) {
     exit
 }
 
-$pid = [int](Get-Content $pidFile | Select-Object -First 1)
-$process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+$ihadrsPid = [int](Get-Content $pidFile | Select-Object -First 1)
+$process = Get-Process -Id $ihadrsPid -ErrorAction SilentlyContinue
 if ($process) {
-    Stop-Process -Id $pid -Force
-    Add-Content -Path $launcherLog -Value "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") Stopped IHADRS PID $pid."
+    Stop-Process -Id $ihadrsPid -Force
+    Add-Content -Path $launcherLog -Value "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") Stopped IHADRS PID $ihadrsPid."
 }
 
 Remove-Item -Path $pidFile -Force -ErrorAction SilentlyContinue
