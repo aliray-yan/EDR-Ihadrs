@@ -1,0 +1,571 @@
+# =============================================================================
+# IHADRS — Response Playbooks
+# config/playbooks.yaml
+#
+# Defines automated response sequences and manual remediation steps for
+# each attack category. Executed by response/auto_responder.py when a
+# ThreatEvent matches an attack category.
+#
+# Template variables:
+#   {pid}                 — Attacking process PID
+#   {process_name}        — Attacking process name
+#   {parent_name}         — Parent process name
+#   {command_line}        — Full command line
+#   {remote_ip}           — Remote IP address (network threats)
+#   {remote_port}         — Remote port
+#   {affected_files}      — List of affected file paths
+#   {service_name}        — Service name (service threats)
+#   {temp_dir}            — System temp directory
+# =============================================================================
+
+version: "1.0"
+
+playbooks:
+
+  # ===========================================================================
+  # RANSOMWARE
+  # ===========================================================================
+  - id: "PB001"
+    attack_category: "Ransomware"
+    mitre_techniques: ["T1486", "T1490"]
+    description: "Response to active ransomware encryption activity"
+    priority: critical
+
+    automated_actions:
+      - action: "suspend_process"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 1
+        description: "Immediately freeze the encrypting process"
+        params:
+          method: "suspend_all_threads"
+          force: true
+
+      - action: "block_process_network"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 2
+        description: "Cut off C2 communication and prevent network spread"
+        params:
+          direction: "all"
+
+      - action: "snapshot_filesystem"
+        target_type: "paths"
+        target: "{affected_directories}"
+        priority: 3
+        description: "Capture filesystem state before further encryption"
+        params:
+          include_metadata: true
+          max_size_mb: 500
+
+    manual_steps:
+      - category: "immediate"
+        urgency: critical
+        steps:
+          - "⚠️ DO NOT restart your computer — decryption keys may be in memory"
+          - "DISCONNECT from the internet and all network drives NOW"
+          - "The malicious process has been SUSPENDED — leave it suspended"
+          - "Note the time: {event_timestamp}"
+
+      - category: "assessment"
+        urgency: high
+        steps:
+          - "Check how many files were encrypted: open affected folders"
+          - "Note encrypted file extensions to identify the ransomware family"
+          - "Check if backup copies exist: vssadmin list shadows"
+          - "Check external backup drive (if disconnected, it may be unaffected)"
+
+      - category: "recovery"
+        urgency: high
+        steps:
+          - "IF shadow copies exist: Right-click folder → Restore previous versions"
+          - "IF offline backup exists: Restore from backup (verify backup is clean first)"
+          - "IF no backup: Search https://nomoreransom.org for a free decryptor"
+          - "After recovery: Delete the malicious process file: {image_path}"
+          - "Run full Windows Defender scan: MpCmdRun.exe -Scan -ScanType 2"
+          - "Change all passwords — they may have been stolen before encryption"
+
+      - category: "prevention"
+        urgency: low
+        steps:
+          - "Enable Windows Backup or use a cloud backup service"
+          - "Keep one offline/disconnected backup copy"
+          - "Enable Controlled Folder Access: Windows Security → Virus & threat protection"
+          - "Never open email attachments from unknown senders"
+          - "Keep Windows and all software updated"
+
+    educational_content: |
+      ## Understanding Ransomware
+
+      Ransomware is malicious software that encrypts your files and demands
+      payment (usually cryptocurrency) to restore them. It's one of the most
+      damaging cyber threats individuals face today.
+
+      **How it gets in:**
+      - Malicious email attachments (most common)
+      - Infected downloads
+      - Exploiting unpatched software
+      - Remote Desktop (RDP) brute force
+
+      **What it does:**
+      1. Establishes connection to attacker's server to get encryption keys
+      2. Deletes shadow copies (backups) if possible
+      3. Encrypts your files with strong encryption
+      4. Displays ransom demand with payment instructions
+
+      **Should you pay?** NO. There's no guarantee files will be restored,
+      and payment funds future attacks.
+
+    references:
+      - "https://www.nomoreransom.org/"
+      - "https://www.cisa.gov/ransomware"
+      - "https://attack.mitre.org/techniques/T1486/"
+
+
+  # ===========================================================================
+  # COMMAND & CONTROL
+  # ===========================================================================
+  - id: "PB002"
+    attack_category: "Command & Control"
+    mitre_techniques: ["T1071", "T1071.001", "T1573", "T1571"]
+    description: "Response to confirmed C2 beaconing or communication"
+    priority: high
+
+    automated_actions:
+      - action: "block_ip"
+        target_type: "ip"
+        target: "{remote_ip}"
+        priority: 1
+        description: "Block outbound connection to C2 server"
+        params:
+          direction: "outbound"
+          protocol: "tcp"
+          duration_seconds: 3600
+          add_firewall_rule: true
+
+      - action: "capture_network_traffic"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 2
+        description: "Capture traffic for analysis before blocking"
+        params:
+          duration_seconds: 60
+          max_size_mb: 50
+
+      - action: "dump_process_memory"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 3
+        description: "Preserve memory for forensic analysis"
+        params:
+          output_path: "{temp_dir}/ihadrs_dumps/"
+          include_heap: true
+
+    manual_steps:
+      - category: "immediate"
+        urgency: high
+        steps:
+          - "Review the C2 connection details: {process_name} → {remote_ip}:{remote_port}"
+          - "Verify {process_name} is not a legitimate application contacting its server"
+          - "Check IP reputation: https://www.virustotal.com/gui/ip-address/{remote_ip}"
+          - "If confirmed malicious: taskkill /PID {pid} /F"
+
+      - category: "investigation"
+        urgency: high
+        steps:
+          - "Check when {process_name} was installed: Get-Item '{image_path}' | Select CreationTime"
+          - "Review all outbound connections: netstat -ano | findstr ESTABLISHED"
+          - "Search for persistence: Check registry run keys and scheduled tasks"
+          - "Review parent process {parent_name} — it may be the initial infection"
+          - "Check for other processes contacting the same IP"
+
+      - category: "remediation"
+        urgency: medium
+        steps:
+          - "Delete the malicious executable: {image_path}"
+          - "Remove any persistence mechanisms found"
+          - "Scan with multiple tools: Windows Defender, Malwarebytes"
+          - "Change all passwords — assume they were stolen"
+          - "Monitor for re-infection over next 48 hours"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1071/001/"
+      - "https://attack.mitre.org/techniques/T1573/"
+
+
+  # ===========================================================================
+  # CREDENTIAL THEFT
+  # ===========================================================================
+  - id: "PB003"
+    attack_category: "Credential Theft"
+    mitre_techniques: ["T1003", "T1003.001", "T1555.003", "T1110"]
+    description: "Response to credential dumping or theft"
+    priority: critical
+
+    automated_actions:
+      - action: "kill_process"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 1
+        description: "Immediately terminate credential dumping tool"
+        params:
+          force: true
+
+    manual_steps:
+      - category: "immediate"
+        urgency: critical
+        steps:
+          - "🔴 ASSUME ALL CREDENTIALS ON THIS MACHINE ARE COMPROMISED"
+          - "Kill the credential dumping process if still running: taskkill /PID {pid} /F"
+          - "Disconnect from the network to prevent credential exfiltration"
+
+      - category: "credential_reset"
+        urgency: critical
+        steps:
+          - "Change Windows password immediately"
+          - "Change email passwords (Gmail, Outlook, etc.)"
+          - "Change banking and financial account passwords"
+          - "Change social media passwords"
+          - "Enable 2FA/MFA on ALL accounts that support it"
+          - "If domain-joined: Contact IT to reset domain credentials"
+          - "Revoke any saved browser passwords — they may have been stolen"
+
+      - category: "investigation"
+        urgency: high
+        steps:
+          - "Identify the credential dumping tool: {process_name}"
+          - "Determine how it got on the system (check email, downloads)"
+          - "Check for new user accounts: net user"
+          - "Check for unauthorized remote desktop sessions"
+          - "Review authentication logs for unusual logins"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1003/001/"
+      - "https://attack.mitre.org/techniques/T1555/003/"
+
+
+  # ===========================================================================
+  # MALWARE EXECUTION (Encoded PowerShell, LOLBins, Office macros)
+  # ===========================================================================
+  - id: "PB004"
+    attack_category: "Malware Execution"
+    mitre_techniques: ["T1059.001", "T1218", "T1566.001", "T1204.002"]
+    description: "Response to active malware execution or suspicious code running"
+    priority: high
+
+    automated_actions:
+      - action: "suspend_process"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 1
+        description: "Freeze suspicious process for investigation"
+        params:
+          graceful: true
+
+      - action: "capture_memory_dump"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 2
+        description: "Preserve memory state for analysis"
+        params:
+          output_path: "{temp_dir}/ihadrs_dumps/"
+
+    manual_steps:
+      - category: "immediate"
+        urgency: high
+        steps:
+          - "Suspicious process {process_name} has been suspended"
+          - "Review what it was trying to do: {command_line}"
+          - "Check if you intentionally ran this — did you open a document or download recently?"
+
+      - category: "investigation"
+        urgency: high
+        steps:
+          - "Hash the suspicious file: Get-FileHash '{image_path}' -Algorithm SHA256"
+          - "Check hash on VirusTotal: https://www.virustotal.com"
+          - "Decode any Base64 payload found in command line"
+          - "Check what files the process created: check Downloads, Temp, AppData"
+          - "Review network connections made by this process"
+
+      - category: "remediation"
+        urgency: medium
+        steps:
+          - "Kill the process: taskkill /PID {pid} /F"
+          - "Delete the malicious file: {image_path}"
+          - "Run Windows Defender scan: MpCmdRun.exe -Scan -ScanType 2"
+          - "Check for persistence (registry, startup folder, scheduled tasks)"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1059/001/"
+
+
+  # ===========================================================================
+  # PERSISTENCE
+  # ===========================================================================
+  - id: "PB005"
+    attack_category: "Persistence"
+    mitre_techniques: ["T1547.001", "T1053.005", "T1543.003", "T1546.002", "T1546.003"]
+    description: "Response to persistence mechanism installation"
+    priority: high
+
+    automated_actions:
+      - action: "collect_forensics"
+        target_type: "system"
+        target: "persistence"
+        priority: 1
+        description: "Collect full persistence inventory before removal"
+        params:
+          include_registry_run: true
+          include_startup_folder: true
+          include_scheduled_tasks: true
+          include_services: true
+
+    manual_steps:
+      - category: "investigation"
+        urgency: high
+        steps:
+          - "Review the persistence mechanism that was installed"
+          - "Identify what process installed it: {process_name} (PID {pid})"
+          - "Check if this is legitimate software installation or malware"
+          - "Run Autoruns (Sysinternals) for comprehensive persistence check"
+
+      - category: "remediation"
+        urgency: high
+        steps:
+          - "Remove malicious registry entry if applicable"
+          - "Delete startup folder entry if applicable"
+          - "Remove scheduled task: schtasks /delete /tn 'TaskName' /f"
+          - "Stop and remove malicious service: sc stop SvcName && sc delete SvcName"
+          - "Delete the malicious executable"
+          - "Verify removal with Autoruns"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1547/001/"
+      - "https://docs.microsoft.com/sysinternals/downloads/autoruns"
+
+
+  # ===========================================================================
+  # DEFENSE EVASION
+  # ===========================================================================
+  - id: "PB006"
+    attack_category: "Defense Evasion"
+    mitre_techniques: ["T1562.001", "T1218", "T1055.001", "T1055.012"]
+    description: "Response to defense evasion techniques"
+    priority: high
+
+    automated_actions:
+      - action: "alert_user"
+        priority: 1
+        description: "Notify user of defense evasion attempt"
+        params:
+          urgency: "high"
+          require_acknowledgment: true
+
+    manual_steps:
+      - category: "immediate"
+        urgency: high
+        steps:
+          - "A process is attempting to disable security tools or evade detection"
+          - "Identify the process: {process_name} running as {username}"
+          - "Verify Windows Defender is still enabled: Get-MpComputerStatus"
+          - "Re-enable Defender if disabled: Set-MpPreference -DisableRealtimeMonitoring $false"
+
+      - category: "investigation"
+        urgency: high
+        steps:
+          - "This is often a sign of an active attack — check for other indicators"
+          - "Review recent event log for related activity"
+          - "Check if other detection rules have fired recently"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1562/001/"
+
+
+  # ===========================================================================
+  # LATERAL MOVEMENT
+  # ===========================================================================
+  - id: "PB007"
+    attack_category: "Lateral Movement"
+    mitre_techniques: ["T1021.002", "T1570"]
+    description: "Response to lateral movement detection"
+    priority: critical
+
+    automated_actions:
+      - action: "block_ip"
+        target_type: "ip"
+        target: "{remote_ip}"
+        priority: 1
+        description: "Block SMB connection to suspected target"
+        params:
+          direction: "outbound"
+          port: 445
+
+    manual_steps:
+      - category: "immediate"
+        urgency: critical
+        steps:
+          - "Lateral movement detected — an attacker may be spreading through your network"
+          - "Block SMB (port 445) in Windows Firewall immediately"
+          - "Disconnect from shared network drives"
+          - "Alert other users on the network"
+
+      - category: "investigation"
+        urgency: critical
+        steps:
+          - "Identify all machines the attacker may have reached"
+          - "Check authentication logs for lateral movement: Event ID 4648, 4624 Type 3"
+          - "Look for new admin accounts created on other machines"
+          - "Check for PsExec, WMIExec patterns on other hosts"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1021/002/"
+
+
+  # ===========================================================================
+  # DATA EXFILTRATION
+  # ===========================================================================
+  - id: "PB008"
+    attack_category: "Data Exfiltration"
+    mitre_techniques: ["T1041", "T1048", "T1005"]
+    description: "Response to data exfiltration activity"
+    priority: high
+
+    automated_actions:
+      - action: "block_ip"
+        target_type: "ip"
+        target: "{remote_ip}"
+        priority: 1
+        description: "Block upload destination"
+        params:
+          direction: "outbound"
+
+      - action: "capture_network_traffic"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 2
+        description: "Capture remaining exfiltration traffic as evidence"
+        params:
+          duration_seconds: 30
+
+    manual_steps:
+      - category: "immediate"
+        urgency: high
+        steps:
+          - "Data may be leaving your system — blocking upload destination"
+          - "Disconnect from internet if exfiltration is confirmed"
+          - "Identify what data was accessed: {accessed_files}"
+
+      - category: "assessment"
+        urgency: high
+        steps:
+          - "Determine what sensitive data may have been exfiltrated"
+          - "Check data classification: personal info, financial data, credentials?"
+          - "If personal data: Consider regulatory notification requirements (GDPR, etc.)"
+          - "Document timeline and scope for incident report"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1041/"
+
+
+  # ===========================================================================
+  # BRUTE FORCE
+  # ===========================================================================
+  - id: "PB009"
+    attack_category: "Brute Force Attack"
+    mitre_techniques: ["T1110"]
+    description: "Response to password brute force detection"
+    priority: high
+
+    automated_actions:
+      - action: "block_ip"
+        target_type: "ip"
+        target: "{source_ip}"
+        priority: 1
+        description: "Block brute force source IP"
+        params:
+          direction: "inbound"
+          duration_seconds: 86400
+
+    manual_steps:
+      - category: "immediate"
+        urgency: high
+        steps:
+          - "{count} failed login attempts from {source_ip} in {window}s"
+          - "Check if any attempt succeeded: look for successful logon after failures"
+          - "Check Windows Event Log: Event IDs 4624 (success) after 4625 (failures)"
+
+      - category: "hardening"
+        urgency: medium
+        steps:
+          - "Enable account lockout policy (5 failures → 15 min lockout)"
+          - "Enable Windows Firewall to block inbound connections on RDP (port 3389)"
+          - "Change the targeted account password immediately"
+          - "Enable multi-factor authentication"
+          - "Consider disabling RDP if not needed: System Properties → Remote"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1110/"
+
+
+  # ===========================================================================
+  # RESOURCE HIJACKING (Cryptomining)
+  # ===========================================================================
+  - id: "PB010"
+    attack_category: "Resource Hijacking"
+    mitre_techniques: ["T1496"]
+    description: "Response to cryptomining malware detection"
+    priority: medium
+
+    automated_actions:
+      - action: "kill_process"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 1
+        description: "Terminate CPU-abusing cryptominer"
+        params:
+          force: true
+
+    manual_steps:
+      - category: "remediation"
+        urgency: medium
+        steps:
+          - "Cryptomining malware is using your computer to mine cryptocurrency"
+          - "The process has been terminated"
+          - "Delete the miner executable: {image_path}"
+          - "Check for persistence mechanisms"
+          - "Your electricity bill may have increased — check usage"
+
+    references:
+      - "https://attack.mitre.org/techniques/T1496/"
+
+
+  # ===========================================================================
+  # GENERIC FALLBACK (Unknown / Uncategorized)
+  # ===========================================================================
+  - id: "PB_DEFAULT"
+    attack_category: "Unknown/Uncategorized"
+    mitre_techniques: []
+    description: "Generic response for unclassified threats"
+    priority: medium
+
+    automated_actions:
+      - action: "collect_forensics"
+        target_type: "pid"
+        target: "{pid}"
+        priority: 1
+        description: "Collect process forensics for analysis"
+        params:
+          include_memory_strings: true
+          include_network: true
+          include_file_handles: true
+
+    manual_steps:
+      - category: "investigation"
+        urgency: medium
+        steps:
+          - "IHADRS detected suspicious activity that doesn't match a specific pattern"
+          - "Review the event details and raw evidence"
+          - "Determine if this is a false positive or a novel threat"
+          - "Hash the suspicious file and check on VirusTotal"
+          - "If confirmed suspicious: kill the process and delete the file"
+          - "Consider reporting to Anthropic if this is a new attack pattern"

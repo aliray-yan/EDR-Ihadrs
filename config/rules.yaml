@@ -1,0 +1,1641 @@
+# =============================================================================
+# IHADRS — Detection Rules
+# config/rules.yaml
+#
+# 30 MITRE ATT&CK-mapped detection rules covering the major attack categories.
+#
+# Rule Schema:
+#   rule_id:        Unique identifier (R001–R030)
+#   name:           Short descriptive name
+#   description:    What this rule detects and why it's suspicious
+#   enabled:        true/false — disable individual rules without deleting
+#   severity:       LOW | MEDIUM | HIGH | CRITICAL
+#   confidence:     Base confidence score 0.0–1.0
+#   mitre:          MITRE ATT&CK mapping
+#   detection:      Field-level conditions that must match
+#   explanation:    Human-readable and technical explanations
+#   remediation:    Automated actions + manual steps
+#   false_positive_hints: Common benign causes for this detection
+#   references:     External documentation links
+# =============================================================================
+
+# =============================================================================
+# SUPPRESSION & WHITELIST RULES
+# These prevent known-good processes from generating false positive alerts.
+# Add your own entries following the same pattern.
+# =============================================================================
+
+whitelist:
+  # Processes that are always trusted — never generate alerts for these
+  trusted_processes:
+    - "explorer.exe"
+    - "svchost.exe"          # Windows Service Host — flagged by process hollowing rule
+    - "python.exe"           # IHADRS itself
+    - "python3.exe"
+    - "uvicorn.exe"
+    - "ihadrs.exe"
+    - "MsMpEng.exe"          # Windows Defender
+    - "chrome.exe"
+    - "msedge.exe"
+    - "firefox.exe"
+    - "SearchHost.exe"
+    - "RuntimeBroker.exe"
+    - "ShellExperienceHost.exe"
+    - "OneDrive.exe"
+    - "Teams.exe"
+
+  # Parent→child relationships that are always trusted
+  trusted_parent_child:
+    - parent: "python.exe"
+      child: "powershell.exe"    # IHADRS AuthMonitor spawning PS for Event Log
+    - parent: "python3.exe"
+      child: "powershell.exe"
+    - parent: "services.exe"
+      child: "svchost.exe"
+    - parent: "wininit.exe"
+      child: "services.exe"
+    - parent: "explorer.exe"
+      child: "powershell.exe"    # User-launched PowerShell from Explorer
+    - parent: "chrome.exe"
+      child: "chrome.exe"        # Chrome multi-process architecture
+
+  # File paths to never alert on (IHADRS own data directory, Chrome, etc.)
+  trusted_paths:
+    - "C:\\Users\\*\\Desktop\\ihadrs\\*"  # IHADRS project folder
+    - "C:\\Users\\*\\AppData\\Local\\Google\\*"
+    - "C:\\Users\\*\\AppData\\Local\\Microsoft\\*"
+    - "C:\\Windows\\System32\\*"
+    - "C:\\Windows\\SysWOW64\\*"
+    - "C:\\Program Files\\*"
+    - "C:\\Program Files (x86)\\*"
+
+  # Processes signed by these vendors are trusted
+  trusted_publishers:
+    - "Microsoft Corporation"
+    - "Microsoft Windows"
+    - "Google LLC"
+    - "Mozilla Corporation"
+
+  # Suppress duplicate alerts: same rule + same resource within N seconds
+  deduplication_window_seconds: 300   # 5 minutes
+  
+  # Minimum confidence to show alert (raise to reduce noise)
+  min_confidence_threshold: 0.60      # Was 0.5 — ignore weak signals
+
+  # Suppress these specific rule IDs entirely (comment out to re-enable)
+  disabled_rules:
+    - "R025"   # Process Hollowing — too many FPs on svchost.exe on Windows
+    - "R014"   # Suspicious PowerShell Parent — IHADRS itself triggers this
+
+  # Spawn burst — only alert if parent is NOT a trusted process
+  spawn_burst_trusted_parents:
+    - "python.exe"    # IHADRS spawning PS for auth log reading
+    - "python3.exe"
+    - "cmd.exe"       # Normal interactive use
+
+
+rules:
+
+  # ===========================================================================
+  # CRITICAL SEVERITY RULES (R001–R008)
+  # ===========================================================================
+
+  - rule_id: "R001"
+    name: "Encoded PowerShell Execution"
+    description: >
+      Detects PowerShell executed with encoded or obfuscated commands.
+      Attackers encode PowerShell commands in Base64 to bypass basic detection
+      and hide malicious instructions from plain-text log scanning.
+    enabled: true
+    severity: HIGH
+    confidence: 0.85
+    mitre:
+      tactics:
+        - "TA0002"  # Execution
+        - "TA0005"  # Defense Evasion
+      techniques:
+        - "T1059.001"  # Command and Scripting Interpreter: PowerShell
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "process"
+          field: "process_name"
+          operator: "equals"
+          value: "powershell.exe"
+          case_sensitive: false
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "-enc"
+            - "-encodedcommand"
+            - "-e "
+            - "-ec "
+            - "frombase64string"
+            - "::frombase64"
+          case_sensitive: false
+    context_enrichment:
+      check_parent_process: true
+      check_network_connections: true
+      extract_encoded_payload: true
+      hash_executable: true
+    explanation:
+      user_friendly: >
+        PowerShell (Windows scripting tool) was run with a hidden/encoded command.
+        Attackers frequently encode their malicious commands to make them harder
+        for security tools to read and detect. This is a classic sign of an
+        attack or malware attempting to run on your system.
+      technical: >
+        Process {process_name} (PID {pid}) executed with Base64-encoded command-line
+        argument, indicating possible defense evasion via command obfuscation.
+        Parent: {parent_name} (PID {parent_pid}). Encoded payload decoded and
+        attached to event for analysis.
+    remediation:
+      automatic:
+        - action: "suspend_process"
+          params:
+            graceful: true
+            priority: "high"
+        - action: "capture_memory_dump"
+          params:
+            path: "{temp_dir}/ihadrs_dumps/"
+            include_heap: true
+      manual_steps:
+        - "Review the decoded PowerShell command in the event details below"
+        - "Check if the parent process ({parent_name}) is legitimate software"
+        - "Search the process SHA256 hash on VirusTotal: https://virustotal.com"
+        - "If malicious, terminate: taskkill /PID {pid} /F"
+        - "Run Windows Defender scan: MpCmdRun.exe -Scan -ScanType 3"
+        - "Search for persistence: Check run keys in registry and startup folder"
+    false_positive_hints:
+      - "Some software update mechanisms (e.g., Chocolatey, Scoop) use encoded PowerShell"
+      - "Enterprise deployment tools like SCCM/Intune use encoded commands"
+      - "Check if the parent process is a known management tool"
+      - "Review timing — does this align with a software update you initiated?"
+    references:
+      - "https://attack.mitre.org/techniques/T1059/001/"
+      - "https://docs.microsoft.com/en-us/powershell/scripting/security/security-features"
+
+  - rule_id: "R002"
+    name: "Office Application Spawning Shell"
+    description: >
+      Detects Microsoft Office applications (Word, Excel, PowerPoint, Outlook)
+      spawning command shells or scripting engines. This is the classic
+      macro malware and phishing document attack pattern where a malicious
+      document executes code when opened.
+    enabled: true
+    severity: CRITICAL
+    confidence: 0.90
+    mitre:
+      tactics:
+        - "TA0001"  # Initial Access
+        - "TA0002"  # Execution
+      techniques:
+        - "T1566.001"  # Phishing: Spearphishing Attachment
+        - "T1059"      # Command and Scripting Interpreter
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "process"
+          field: "parent_name"
+          operator: "contains_any"
+          values:
+            - "winword.exe"
+            - "excel.exe"
+            - "powerpnt.exe"
+            - "outlook.exe"
+            - "onenote.exe"
+            - "msaccess.exe"
+            - "mspub.exe"
+            - "wordpad.exe"
+          case_sensitive: false
+        - monitor: "process"
+          field: "process_name"
+          operator: "contains_any"
+          values:
+            - "cmd.exe"
+            - "powershell.exe"
+            - "wscript.exe"
+            - "cscript.exe"
+            - "mshta.exe"
+            - "regsvr32.exe"
+            - "rundll32.exe"
+            - "certutil.exe"
+          case_sensitive: false
+    context_enrichment:
+      check_parent_process: true
+      check_grandparent_process: true
+      check_network_connections: true
+      hash_parent_document: true
+    explanation:
+      user_friendly: >
+        A Microsoft Office application ({parent_name}) opened a command window
+        or scripting tool ({process_name}). This is the #1 sign of a malicious
+        document attack — when you open an infected Word or Excel file, it
+        runs hidden commands on your computer. If you recently opened an email
+        attachment or downloaded a document, this is almost certainly an attack.
+      technical: >
+        Parent process {parent_name} (PID {parent_pid}) spawned child process
+        {process_name} (PID {pid}). This process chain is the definitive indicator
+        of macro-based malware execution, exploited document vulnerability, or
+        DDE/OLE-based code execution. Command line: {command_line}
+    remediation:
+      automatic:
+        - action: "suspend_process"
+          target: "{pid}"
+        - action: "block_network"
+          target: "{pid}"
+      manual_steps:
+        - "IMMEDIATELY close the Office application that spawned this"
+        - "Do NOT save the document if prompted"
+        - "Terminate the spawned process: taskkill /PID {pid} /F"
+        - "Check what files the process created or modified"
+        - "Scan the document with antivirus before reopening"
+        - "Check your email for suspicious attachments received recently"
+        - "Consider running a full system scan"
+    false_positive_hints:
+      - "Some legitimate Office add-ins and automation tools use this pattern"
+      - "Development environments may trigger this (e.g., running Office macros for testing)"
+      - "Check if you intentionally ran a macro or Office automation script"
+    references:
+      - "https://attack.mitre.org/techniques/T1566/001/"
+      - "https://www.microsoft.com/en-us/security/blog/macro-malware/"
+
+  - rule_id: "R003"
+    name: "Mass File Encryption Pattern"
+    description: >
+      Detects ransomware behavior: rapid bulk file renaming where files are
+      given encryption-specific extensions (.encrypted, .locked, .crypt, etc.)
+      This rule fires when the rename rate exceeds the threshold within the
+      detection window, indicating active ransomware encryption.
+    enabled: true
+    severity: CRITICAL
+    confidence: 0.95
+    mitre:
+      tactics:
+        - "TA0040"  # Impact
+      techniques:
+        - "T1486"  # Data Encrypted for Impact
+    detection:
+      condition: "threshold"
+      threshold:
+        count: 20
+        window_seconds: 10
+      rules:
+        - monitor: "file"
+          field: "change_type"
+          operator: "equals"
+          value: "renamed"
+        - monitor: "file"
+          field: "new_extension"
+          operator: "contains_any"
+          values:
+            - ".encrypted"
+            - ".locked"
+            - ".crypt"
+            - ".crypto"
+            - ".enc"
+            - ".locky"
+            - ".cerber"
+            - ".zepto"
+            - ".wncry"
+            - ".wncryt"
+            - ".wcry"
+            - ".onion"
+            - ".sage"
+            - ".globe"
+            - ".dharma"
+            - ".phobos"
+            - ".maze"
+            - ".lockbit"
+            - ".revil"
+          case_sensitive: false
+    context_enrichment:
+      capture_affected_files: true
+      check_shadow_copies: true
+      identify_encrypting_process: true
+    explanation:
+      user_friendly: >
+        RANSOMWARE DETECTED. A program is rapidly renaming your files and adding
+        an encryption extension — this means your files are being encrypted and
+        held hostage. {file_count} files have been renamed in the last {window}
+        seconds. IHADRS has automatically suspended the malicious process.
+        DO NOT restart your computer. Act immediately using the steps below.
+      technical: >
+        {file_count} file rename operations detected in {window}s with encryption
+        extensions. Suspected ransomware process: {process_name} (PID {pid}).
+        Sample affected files: {sample_files}. Shadow copy enumeration initiated.
+    remediation:
+      automatic:
+        - action: "suspend_process"
+          target: "{pid}"
+          priority: "critical"
+          params:
+            method: "suspend_all_threads"
+        - action: "block_network"
+          target: "{pid}"
+          params:
+            direction: "all"
+        - action: "snapshot_filesystem"
+          params:
+            paths: "{affected_directories}"
+      manual_steps:
+        - "CRITICAL: DO NOT restart your computer (may lose decryption keys)"
+        - "DISCONNECT from the internet and any shared network drives immediately"
+        - "The encrypting process has been SUSPENDED by IHADRS — do not kill it yet"
+        - "Check for shadow copy backups: vssadmin list shadows"
+        - "If shadow copies exist, restore using: Previous Versions in right-click menu"
+        - "Check if you have backups on external drives (offline backup)"
+        - "If no backups: Search nomoreransom.org for a free decryptor"
+        - "After recovery: Delete the malicious files and run a full scan"
+        - "NEVER pay the ransom — there is no guarantee of recovery and it funds criminals"
+    false_positive_hints:
+      - "Bulk file renaming tools (e.g., batch rename utilities) can trigger this"
+      - "Backup software with encryption features may trigger this"
+      - "Check if a legitimate encryption program is running (VeraCrypt, 7-Zip, etc.)"
+    references:
+      - "https://attack.mitre.org/techniques/T1486/"
+      - "https://www.nomoreransom.org/"
+      - "https://www.cisa.gov/ransomware"
+
+  - rule_id: "R004"
+    name: "Shadow Copy Deletion"
+    description: >
+      Detects deletion of Windows Volume Shadow Copies — the built-in backup
+      system used for system restore and file recovery. Ransomware routinely
+      deletes shadow copies before encrypting files to prevent victims from
+      restoring their data without paying.
+    enabled: true
+    severity: CRITICAL
+    confidence: 0.92
+    mitre:
+      tactics:
+        - "TA0040"  # Impact
+      techniques:
+        - "T1490"  # Inhibit System Recovery
+    detection:
+      condition: "any"
+      rules:
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "vssadmin delete shadows"
+            - "vssadmin.exe delete"
+            - "wmic shadowcopy delete"
+            - "wbadmin delete"
+            - "bcdedit /set"
+            - "bcdedit.exe /set"
+            - "recoveryenabled no"
+            - "ignoreallfailures"
+          case_sensitive: false
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_all"
+          values:
+            - "delete"
+            - "shadow"
+          case_sensitive: false
+    explanation:
+      user_friendly: >
+        A program is deleting Windows system backup copies (Shadow Copies).
+        This is almost always done by ransomware BEFORE encrypting your files,
+        to prevent you from recovering them without paying. This is a critical
+        warning — ransomware may be about to encrypt your entire system.
+      technical: >
+        Shadow copy deletion command detected. Process: {process_name} (PID {pid}),
+        Parent: {parent_name}. Command: {command_line}. This is a pre-encryption
+        step in ransomware attacks (T1490). Immediate investigation required.
+    remediation:
+      automatic:
+        - action: "suspend_process"
+          target: "{pid}"
+        - action: "kill_process"
+          target: "{pid}"
+          params:
+            force: true
+      manual_steps:
+        - "Kill the process if not already done: taskkill /PID {pid} /F"
+        - "Check remaining shadow copies: vssadmin list shadows"
+        - "Investigate parent process {parent_name} — it may be the ransomware loader"
+        - "Check for mass file renaming activity — encryption may have already started"
+        - "Disconnect from network to prevent lateral movement"
+        - "Run full malware scan immediately"
+    false_positive_hints:
+      - "System administrators may delete old shadow copies for disk space management"
+      - "Disk cleanup utilities may delete shadow copies as part of optimization"
+      - "Check if a system administrator deliberately ran this command"
+    references:
+      - "https://attack.mitre.org/techniques/T1490/"
+
+  - rule_id: "R005"
+    name: "Credential Dumping Tool Execution"
+    description: >
+      Detects execution of known credential dumping tools (Mimikatz, ProcDump
+      targeting LSASS, LaZagne, etc.) or behavioral patterns consistent with
+      credential extraction from memory. Credential theft is a core step in
+      most advanced attacks and lateral movement campaigns.
+    enabled: true
+    severity: CRITICAL
+    confidence: 0.88
+    mitre:
+      tactics:
+        - "TA0006"  # Credential Access
+      techniques:
+        - "T1003.001"  # OS Credential Dumping: LSASS Memory
+        - "T1003"      # OS Credential Dumping
+    detection:
+      condition: "any"
+      rules:
+        - monitor: "process"
+          field: "process_name"
+          operator: "contains_any"
+          values:
+            - "mimikatz"
+            - "wce.exe"
+            - "gsecdump"
+            - "pwdump"
+            - "fgdump"
+            - "lsadump"
+            - "lazagne"
+          case_sensitive: false
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "sekurlsa"
+            - "lsadump"
+            - "kerberos::list"
+            - "privilege::debug"
+            - "token::elevate"
+            - "lsass.dmp"
+            - "/ma lsass"
+          case_sensitive: false
+        - monitor: "file"
+          field: "file_path"
+          operator: "contains_any"
+          values:
+            - "lsass.dmp"
+            - "lsass.exe.dmp"
+            - "procdump"
+          case_sensitive: false
+    context_enrichment:
+      check_process_access_to_lsass: true
+      hash_executable: true
+      check_privileges: true
+    explanation:
+      user_friendly: >
+        A credential theft tool was detected on your system. This type of tool
+        extracts usernames and passwords stored in Windows memory, allowing
+        attackers to log into other systems using your credentials. If this ran
+        successfully, assume ALL your passwords are compromised.
+      technical: >
+        Credential dumping tool detected: {process_name} (PID {pid}).
+        Command: {command_line}. This tool extracts plaintext credentials,
+        NTLM hashes, and Kerberos tickets from LSASS memory (T1003.001).
+        Immediate containment and password reset required.
+    remediation:
+      automatic:
+        - action: "kill_process"
+          target: "{pid}"
+          params:
+            force: true
+        - action: "capture_memory_dump"
+          params:
+            include_lsass: false  # Don't dump — that's what attacker wants
+      manual_steps:
+        - "ASSUME ALL CREDENTIALS ARE COMPROMISED"
+        - "Change ALL passwords immediately: Windows login, email, banking, etc."
+        - "Revoke and reset all Active Directory accounts if domain-joined"
+        - "Enable MFA on all accounts that support it"
+        - "Check for new user accounts created: net user"
+        - "Check for new scheduled tasks or services created"
+        - "Review network logins for suspicious activity"
+        - "Consider rebuilding the system — credentials may be permanently compromised"
+    false_positive_hints:
+      - "Security penetration testers may use Mimikatz in authorized red team exercises"
+      - "Some legitimate forensics tools may trigger LSASS access patterns"
+      - "Verify with your IT/security team if any authorized testing is in progress"
+    references:
+      - "https://attack.mitre.org/techniques/T1003/001/"
+      - "https://github.com/gentilkiwi/mimikatz"
+
+  - rule_id: "R006"
+    name: "Living-off-the-Land Binary (LOLBin) Network Activity"
+    description: >
+      Detects Windows built-in utilities (LOLBins) making unexpected network
+      connections. Attackers use trusted Windows binaries to download payloads
+      and execute code while evading detection, since these processes are
+      inherently trusted by the OS.
+    enabled: true
+    severity: HIGH
+    confidence: 0.80
+    mitre:
+      tactics:
+        - "TA0005"  # Defense Evasion
+        - "TA0002"  # Execution
+      techniques:
+        - "T1218"  # System Binary Proxy Execution
+        - "T1105"  # Ingress Tool Transfer
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "process"
+          field: "process_name"
+          operator: "contains_any"
+          values:
+            - "mshta.exe"
+            - "regsvr32.exe"
+            - "certutil.exe"
+            - "bitsadmin.exe"
+            - "msiexec.exe"
+            - "installutil.exe"
+            - "regasm.exe"
+            - "cmstp.exe"
+            - "odbcconf.exe"
+            - "esentutl.exe"
+            - "xwizard.exe"
+          case_sensitive: false
+        - monitor: "network"
+          field: "direction"
+          operator: "equals"
+          value: "outbound"
+    explanation:
+      user_friendly: >
+        A Windows built-in system tool ({process_name}) is making an unusual
+        internet connection. Attackers use these trusted tools to download
+        malware because security software often trusts them. This combination
+        of a system tool connecting to the internet is very suspicious.
+      technical: >
+        LOLBin {process_name} (PID {pid}) established outbound connection to
+        {remote_ip}:{remote_port}. These binaries are not expected to initiate
+        network connections in normal operation. Command: {command_line}.
+    remediation:
+      automatic:
+        - action: "block_process_network"
+          target: "{pid}"
+        - action: "capture_network_traffic"
+          params:
+            duration_seconds: 60
+      manual_steps:
+        - "Block the outbound connection: check Windows Firewall"
+        - "Check what {process_name} was trying to download from {remote_ip}"
+        - "Review the full command line: {command_line}"
+        - "Check the remote IP reputation: https://www.virustotal.com/gui/ip-address/{remote_ip}"
+        - "Kill the process if confirmed malicious: taskkill /PID {pid} /F"
+    false_positive_hints:
+      - "certutil.exe is sometimes used legitimately for certificate operations"
+      - "msiexec.exe may connect to download MSI packages during legitimate installs"
+      - "Enterprise software distribution (SCCM/Intune) may use these binaries"
+    references:
+      - "https://attack.mitre.org/techniques/T1218/"
+      - "https://lolbas-project.github.io/"
+
+  - rule_id: "R007"
+    name: "Lateral Movement via SMB/PsExec"
+    description: >
+      Detects lateral movement tools using SMB for remote code execution.
+      PsExec, Impacket tools, and similar utilities create named pipe connections
+      and launch services remotely, allowing attackers to move through a network.
+    enabled: true
+    severity: CRITICAL
+    confidence: 0.85
+    mitre:
+      tactics:
+        - "TA0008"  # Lateral Movement
+      techniques:
+        - "T1021.002"  # Remote Services: SMB/Windows Admin Shares
+        - "T1570"      # Lateral Tool Transfer
+    detection:
+      condition: "any"
+      rules:
+        - monitor: "process"
+          field: "process_name"
+          operator: "contains_any"
+          values:
+            - "psexec.exe"
+            - "psexesvc.exe"
+            - "paexec.exe"
+            - "remcom.exe"
+            - "wmiexec.py"
+          case_sensitive: false
+        - monitor: "service"
+          field: "service_path"
+          operator: "contains_any"
+          values:
+            - "\\ADMIN$"
+            - "\\IPC$"
+            - "\\C$"
+          case_sensitive: false
+        - monitor: "network"
+          field: "remote_port"
+          operator: "equals"
+          value: 445
+    explanation:
+      user_friendly: >
+        A remote access/control tool ({process_name}) that is commonly used
+        by attackers to spread through networks was detected. This may indicate
+        an attacker is trying to access other computers using your machine as
+        a jumping point, or someone is controlling your machine remotely without
+        your knowledge.
+      technical: >
+        Lateral movement indicator detected. Process: {process_name} (PID {pid}).
+        SMB connection to {remote_ip}:{remote_port}. This is consistent with
+        PsExec-style lateral movement (T1021.002). Check for associated
+        service creation events and authentication events from this host.
+    remediation:
+      automatic:
+        - action: "block_ip"
+          target: "{remote_ip}"
+          params:
+            direction: "outbound"
+            port: 445
+      manual_steps:
+        - "Block outbound SMB (port 445) to external hosts in firewall"
+        - "Check if the source account credentials have been compromised"
+        - "Review authentication logs for unusual network logins"
+        - "Check other machines for signs of compromise from this IP"
+        - "Consider network isolation if active lateral movement is suspected"
+    false_positive_hints:
+      - "System administrators use PsExec legitimately for remote management"
+      - "IT automation tools may use SMB admin shares for software deployment"
+      - "Verify with your IT team if any remote management was expected"
+    references:
+      - "https://attack.mitre.org/techniques/T1021/002/"
+
+  - rule_id: "R008"
+    name: "Suspicious Service Installation"
+    description: >
+      Detects creation of new Windows services from non-standard paths.
+      Attackers install malicious services for persistence and privilege
+      escalation, often placing the executable in temporary or user-writable
+      directories rather than the standard Windows service locations.
+    enabled: true
+    severity: HIGH
+    confidence: 0.80
+    mitre:
+      tactics:
+        - "TA0003"  # Persistence
+        - "TA0004"  # Privilege Escalation
+      techniques:
+        - "T1543.003"  # Create or Modify System Process: Windows Service
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "service"
+          field: "change_type"
+          operator: "equals"
+          value: "created"
+        - monitor: "service"
+          field: "service_path"
+          operator: "contains_any"
+          values:
+            - "%TEMP%"
+            - "%APPDATA%"
+            - "\\Temp\\"
+            - "\\AppData\\"
+            - "\\Downloads\\"
+            - "\\ProgramData\\"
+            - "\\Users\\Public\\"
+          case_sensitive: false
+    explanation:
+      user_friendly: >
+        A new Windows background service was created from a suspicious location
+        (temp folder or user directory). Legitimate Windows services are installed
+        in system folders like C:\Windows or C:\Program Files. Services created
+        from other locations are frequently malware trying to stay running on
+        your computer.
+      technical: >
+        New service '{service_name}' created with executable path '{service_path}'.
+        Path is in a user-writable or temporary directory, which is atypical for
+        legitimate services. Service account: {service_account}. Start type:
+        {start_type}. This matches T1543.003 persistence technique.
+    remediation:
+      automatic:
+        - action: "stop_service"
+          target: "{service_name}"
+        - action: "disable_service"
+          target: "{service_name}"
+      manual_steps:
+        - "Stop the service: sc stop {service_name}"
+        - "Disable the service: sc config {service_name} start= disabled"
+        - "Review the service executable: {service_path}"
+        - "Hash the file and search on VirusTotal"
+        - "Delete the service: sc delete {service_name}"
+        - "Delete the malicious executable if confirmed malicious"
+        - "Check for related registry persistence keys"
+    false_positive_hints:
+      - "Some legitimate portable applications install services from non-standard paths"
+      - "Development tools and SDKs may create temporary services"
+      - "Check if you recently installed any software that may use a custom service"
+    references:
+      - "https://attack.mitre.org/techniques/T1543/003/"
+
+
+  # ===========================================================================
+  # HIGH SEVERITY RULES (R009–R018)
+  # ===========================================================================
+
+  - rule_id: "R009"
+    name: "Rapid Process Spawning from Shell"
+    description: >
+      Detects rapid spawning of command shells or scripting interpreters.
+      Running more than 5 cmd.exe or PowerShell instances within 30 seconds
+      is unusual for normal user activity and is consistent with worm behavior,
+      automated attack scripts, or mass exploitation.
+    enabled: true
+    severity: HIGH
+    confidence: 0.75
+    mitre:
+      tactics:
+        - "TA0002"  # Execution
+      techniques:
+        - "T1059"  # Command and Scripting Interpreter
+    detection:
+      condition: "threshold"
+      threshold:
+        count: 5
+        window_seconds: 30
+      rules:
+        - monitor: "process"
+          field: "process_name"
+          operator: "contains_any"
+          values:
+            - "cmd.exe"
+            - "powershell.exe"
+            - "wscript.exe"
+            - "cscript.exe"
+          case_sensitive: false
+    explanation:
+      user_friendly: >
+        {count} command windows opened in {window} seconds. While occasionally
+        legitimate, this pattern is strongly associated with malware scripts
+        running automated commands on your system. This could indicate a
+        worm spreading, a script running malicious commands, or active attacker
+        activity.
+      technical: >
+        {count} instances of {process_name} spawned within {window}s.
+        Threshold exceeded: {count} > {threshold}. Parent distribution: {parents}.
+        This pattern is consistent with scripted execution or worm activity (T1059).
+    false_positive_hints:
+      - "Build systems and CI/CD pipelines may spawn many shells"
+      - "Some developer workflows involve multiple terminal sessions"
+      - "Check if the parent processes are known development tools"
+    references:
+      - "https://attack.mitre.org/techniques/T1059/"
+
+  - rule_id: "R010"
+    name: "Executable Launched from High-Risk Path"
+    description: >
+      Detects execution of binaries from temporary, downloads, or other
+      user-writable directories. Malware frequently writes itself to these
+      locations because they don't require administrator access to write to,
+      and then executes from there.
+    enabled: true
+    severity: HIGH
+    confidence: 0.75
+    mitre:
+      tactics:
+        - "TA0002"  # Execution
+        - "TA0005"  # Defense Evasion
+      techniques:
+        - "T1204.002"  # User Execution: Malicious File
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "process"
+          field: "event_type"
+          operator: "equals"
+          value: "process.created"
+        - monitor: "process"
+          field: "image_path"
+          operator: "contains_any"
+          values:
+            - "\\Temp\\"
+            - "\\tmp\\"
+            - "\\Downloads\\"
+            - "\\AppData\\Local\\Temp\\"
+            - "\\AppData\\Roaming\\"
+            - "\\Users\\Public\\"
+          case_sensitive: false
+        - monitor: "process"
+          field: "image_path"
+          operator: "ends_with"
+          values:
+            - ".exe"
+            - ".com"
+            - ".scr"
+          case_sensitive: false
+    false_positive_hints:
+      - "Some installers extract and run executables from temp directories"
+      - "Browser-downloaded installers run from Downloads folder"
+      - "Check if the executable is a known software installer"
+    references:
+      - "https://attack.mitre.org/techniques/T1204/002/"
+
+  - rule_id: "R011"
+    name: "C2 Beaconing Behavior"
+    description: >
+      Detects regular-interval network connections with low jitter — the
+      hallmark of malware checking in with a command-and-control server.
+      C2 beacons have predictable timing because they're automated; human
+      browsing is irregular. Low jitter (<15%) on repeated connections is
+      strong evidence of C2 communication.
+    enabled: true
+    severity: HIGH
+    confidence: 0.80
+    mitre:
+      tactics:
+        - "TA0011"  # Command and Control
+      techniques:
+        - "T1071.001"  # Application Layer Protocol: Web Protocols
+        - "T1573"      # Encrypted Channel
+    detection:
+      condition: "behavioral"
+      behavioral_pattern: "c2_beacon"
+      params:
+        min_interval_seconds: 30
+        max_jitter_pct: 0.15
+        min_observations: 5
+        observation_window_seconds: 600
+    explanation:
+      user_friendly: >
+        A program ({process_name}) is regularly contacting an external server
+        ({remote_ip}) at very precise intervals, which is what malware does to
+        receive commands from attackers. Normal internet activity doesn't follow
+        such a precise pattern. This is a strong indicator that something on
+        your computer is under attacker control.
+      technical: >
+        Beaconing pattern detected: {process_name} (PID {pid}) connecting to
+        {remote_ip}:{remote_port} every {interval:.1f}s ± {jitter:.1f}%
+        ({observation_count} observations over {window}s). Jitter below 15%
+        threshold indicates automated C2 beacon vs. legitimate web traffic.
+    false_positive_hints:
+      - "Sync applications (Dropbox, OneDrive) check-in regularly"
+      - "Antivirus software phones home for updates at regular intervals"
+      - "Monitoring agents (Elastic, Splunk UF) beacon to their servers"
+      - "Verify the process name and remote IP are from known software"
+    references:
+      - "https://attack.mitre.org/techniques/T1071/001/"
+
+  - rule_id: "R012"
+    name: "Registry Run Key Persistence"
+    description: >
+      Detects modification of Windows registry Run keys — the most common
+      persistence mechanism used by malware to survive reboots. Any program
+      added to these keys will start automatically when Windows boots or
+      when any user logs in.
+    enabled: true
+    severity: HIGH
+    confidence: 0.75
+    mitre:
+      tactics:
+        - "TA0003"  # Persistence
+      techniques:
+        - "T1547.001"  # Boot or Logon Autostart Execution: Registry Run Keys
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "registry"
+          field: "change_type"
+          operator: "equals"
+          value: "value_set"
+        - monitor: "registry"
+          field: "key_path"
+          operator: "contains_any"
+          values:
+            - "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
+            - "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+            - "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run"
+            - "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"
+          case_sensitive: false
+    false_positive_hints:
+      - "Software installers routinely add themselves to Run keys"
+      - "Security software, cloud sync tools, and hardware utilities use Run keys"
+      - "Check the value_data field — does it point to a known, legitimate program?"
+    references:
+      - "https://attack.mitre.org/techniques/T1547/001/"
+
+  - rule_id: "R013"
+    name: "Suspicious Scheduled Task Creation"
+    description: >
+      Detects creation of scheduled tasks via schtasks.exe from non-standard
+      parent processes. Scheduled tasks are a popular persistence mechanism.
+      Malware creates tasks to re-run itself, ensure persistence after reboot,
+      or execute commands at specified intervals.
+    enabled: true
+    severity: HIGH
+    confidence: 0.75
+    mitre:
+      tactics:
+        - "TA0003"  # Persistence
+        - "TA0004"  # Privilege Escalation
+      techniques:
+        - "T1053.005"  # Scheduled Task/Job: Scheduled Task
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "process"
+          field: "process_name"
+          operator: "equals"
+          value: "schtasks.exe"
+          case_sensitive: false
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "/create"
+            - "-create"
+          case_sensitive: false
+        - monitor: "process"
+          field: "parent_name"
+          operator: "not contains_any"
+          values:
+            - "services.exe"
+            - "mmc.exe"
+            - "taskschd.exe"
+          case_sensitive: false
+    false_positive_hints:
+      - "Software installers create scheduled tasks for updates"
+      - "System administrators create tasks via scripts"
+      - "Review the task definition for suspicious commands or paths"
+    references:
+      - "https://attack.mitre.org/techniques/T1053/005/"
+
+  - rule_id: "R014"
+    name: "Browser Credential Store Access"
+    description: >
+      Detects access to browser credential databases (Chrome Login Data,
+      Firefox logins.json, Edge Vault). These files contain stored usernames
+      and passwords. Non-browser processes accessing these files indicates
+      credential theft.
+    enabled: true
+    severity: HIGH
+    confidence: 0.85
+    mitre:
+      tactics:
+        - "TA0006"  # Credential Access
+      techniques:
+        - "T1555.003"  # Credentials from Password Stores: Credentials from Web Browsers
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "file"
+          field: "file_path"
+          operator: "contains_any"
+          values:
+            - "Chrome\\User Data\\Default\\Login Data"
+            - "Chrome\\User Data\\Default\\Cookies"
+            - "Firefox\\Profiles"
+            - "Microsoft\\Edge\\User Data\\Default\\Login Data"
+            - "Opera\\Opera GX\\Login Data"
+            - "Brave-Browser\\User Data\\Default\\Login Data"
+          case_sensitive: false
+        - monitor: "process"
+          field: "process_name"
+          operator: "not contains_any"
+          values:
+            - "chrome.exe"
+            - "firefox.exe"
+            - "msedge.exe"
+            - "opera.exe"
+            - "brave.exe"
+          case_sensitive: false
+    false_positive_hints:
+      - "Password managers (LastPass, 1Password) may access browser stores for migration"
+      - "Backup software reads all files including browser profiles"
+      - "Browser sync utilities may access these files"
+    references:
+      - "https://attack.mitre.org/techniques/T1555/003/"
+
+  - rule_id: "R015"
+    name: "Outbound Connection on Non-Standard Port"
+    description: >
+      Detects non-browser/non-system processes making outbound connections
+      on unusual ports. Malware often uses non-standard ports to communicate
+      with C2 servers to avoid basic firewall rules and blend with legitimate
+      traffic patterns.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.60
+    mitre:
+      tactics:
+        - "TA0011"  # Command and Control
+      techniques:
+        - "T1571"  # Non-Standard Port
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "network"
+          field: "direction"
+          operator: "equals"
+          value: "outbound"
+        - monitor: "network"
+          field: "remote_port"
+          operator: "in"
+          values: [4444, 4445, 5555, 6666, 7777, 8888, 9999, 1337, 31337,
+                   12345, 1234, 50050, 8765, 9001]
+        - monitor: "network"
+          field: "process_name"
+          operator: "not contains_any"
+          values:
+            - "svchost.exe"
+            - "system"
+            - "lsass.exe"
+          case_sensitive: false
+    false_positive_hints:
+      - "Development tools use various ports (node.js servers, test APIs)"
+      - "Gaming applications use non-standard ports"
+      - "VPN clients may use various ports"
+    references:
+      - "https://attack.mitre.org/techniques/T1571/"
+
+  - rule_id: "R016"
+    name: "Authentication Brute Force Spike"
+    description: >
+      Detects rapid authentication failures indicating a brute force or
+      password spray attack. 5 or more failed logins within 60 seconds from
+      the same source or targeting the same account is abnormal and indicates
+      an automated attack.
+    enabled: true
+    severity: HIGH
+    confidence: 0.85
+    mitre:
+      tactics:
+        - "TA0006"  # Credential Access
+      techniques:
+        - "T1110"  # Brute Force
+    detection:
+      condition: "threshold"
+      threshold:
+        count: 5
+        window_seconds: 60
+        group_by: "source_ip"
+      rules:
+        - monitor: "authentication"
+          field: "success"
+          operator: "equals"
+          value: false
+    explanation:
+      user_friendly: >
+        {count} failed login attempts were detected from {source_ip} in {window}
+        seconds. Someone or something is trying to guess your password.
+        If this is from an external IP address, your system may be under attack
+        from the internet. Change your passwords immediately and check if any
+        attempt succeeded.
+      technical: >
+        Brute force pattern detected: {count} authentication failures in {window}s.
+        Source: {source_ip}. Target accounts: {target_accounts}. Auth package:
+        {auth_package}. Check for any successful logins following failures.
+    false_positive_hints:
+      - "Misconfigured applications with wrong cached credentials generate failures"
+      - "Legitimate users who forgot passwords may retry multiple times"
+      - "Domain authentication issues after password changes can generate errors"
+    references:
+      - "https://attack.mitre.org/techniques/T1110/"
+
+  - rule_id: "R017"
+    name: "DLL Injection Indicators"
+    description: >
+      Detects indicators of DLL injection — a technique where malicious code
+      is loaded into the memory space of a legitimate process. This is used
+      to hide malware inside trusted processes and gain the privileges of
+      those processes.
+    enabled: true
+    severity: HIGH
+    confidence: 0.75
+    mitre:
+      tactics:
+        - "TA0005"  # Defense Evasion
+        - "TA0004"  # Privilege Escalation
+      techniques:
+        - "T1055.001"  # Process Injection: Dynamic-link Library Injection
+    detection:
+      condition: "any"
+      rules:
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "createremotethread"
+            - "virtualallocex"
+            - "writeprocessmemory"
+            - "queueuserapc"
+            - "ntcreatethreadinprocess"
+          case_sensitive: false
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "reflectdll"
+            - "inject"
+            - "shellcode"
+            - "payload"
+          case_sensitive: false
+    false_positive_hints:
+      - "Game anti-cheat software uses DLL injection legitimately"
+      - "Some debugging and profiling tools inject DLLs"
+      - "Virtualization software hooks may appear similar"
+    references:
+      - "https://attack.mitre.org/techniques/T1055/001/"
+
+  - rule_id: "R018"
+    name: "Security Tool Tampering"
+    description: >
+      Detects attempts to disable Windows Defender, tamper with security
+      settings, or stop endpoint protection services. Attackers disable
+      security tools as one of their first steps to avoid detection while
+      carrying out the rest of their attack.
+    enabled: true
+    severity: HIGH
+    confidence: 0.90
+    mitre:
+      tactics:
+        - "TA0005"  # Defense Evasion
+      techniques:
+        - "T1562.001"  # Impair Defenses: Disable or Modify Tools
+    detection:
+      condition: "any"
+      rules:
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "Set-MpPreference -DisableRealtimeMonitoring"
+            - "Add-MpPreference -ExclusionPath"
+            - "sc stop windefend"
+            - "sc config windefend"
+            - "net stop windefend"
+            - "net stop mssense"
+            - "net stop sense"
+          case_sensitive: false
+        - monitor: "registry"
+          field: "key_path"
+          operator: "contains_any"
+          values:
+            - "SOFTWARE\\Policies\\Microsoft\\Windows Defender"
+            - "DisableAntiSpyware"
+            - "DisableRealtimeMonitoring"
+          case_sensitive: false
+        - monitor: "system"
+          field: "subsystem"
+          operator: "equals"
+          value: "defender"
+    false_positive_hints:
+      - "Enterprise security teams may configure Defender exclusions legitimately"
+      - "Some legitimate software requests Defender exclusions during installation"
+      - "IT administrators may disable Defender temporarily during software deployment"
+    references:
+      - "https://attack.mitre.org/techniques/T1562/001/"
+
+
+  # ===========================================================================
+  # MEDIUM SEVERITY RULES (R019–R026)
+  # ===========================================================================
+
+  - rule_id: "R019"
+    name: "Suspicious Executable Download"
+    description: >
+      Detects executable files downloaded via browser to high-risk locations
+      (Downloads folder, Temp, etc.) followed by immediate execution.
+      While downloading files is normal, immediate execution of downloaded
+      executables without verification is a common malware delivery pattern.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.65
+    mitre:
+      tactics:
+        - "TA0001"  # Initial Access
+      techniques:
+        - "T1105"  # Ingress Tool Transfer
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "file"
+          field: "change_type"
+          operator: "equals"
+          value: "created"
+        - monitor: "file"
+          field: "file_path"
+          operator: "contains"
+          value: "\\Downloads\\"
+        - monitor: "file"
+          field: "file_extension"
+          operator: "in"
+          values: [".exe", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".js",
+                   ".hta", ".scr", ".com", ".pif"]
+    false_positive_hints:
+      - "Intentionally downloaded software installers"
+      - "Browser-downloaded utilities and tools"
+    references:
+      - "https://attack.mitre.org/techniques/T1105/"
+
+  - rule_id: "R020"
+    name: "Cryptominer CPU Abuse"
+    description: >
+      Detects unknown processes consuming excessive CPU for extended periods,
+      consistent with cryptocurrency mining malware. Cryptominers use victim
+      systems to mine cryptocurrency without consent, causing performance
+      degradation and higher electricity bills.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.65
+    mitre:
+      tactics:
+        - "TA0040"  # Impact
+      techniques:
+        - "T1496"  # Resource Hijacking
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "process"
+          field: "cpu_percent"
+          operator: "greater_than"
+          value: 85
+        - monitor: "process"
+          field: "lifetime_seconds"
+          operator: "greater_than"
+          value: 30
+        - monitor: "process"
+          field: "is_signed"
+          operator: "equals"
+          value: false
+    false_positive_hints:
+      - "Legitimate CPU-intensive tasks: video encoding, compilation, 3D rendering"
+      - "Antivirus scans temporarily use high CPU"
+      - "Windows Update processes run high-CPU tasks in background"
+    references:
+      - "https://attack.mitre.org/techniques/T1496/"
+
+  - rule_id: "R021"
+    name: "Screensaver Registry Persistence"
+    description: >
+      Detects modifications to screensaver registry keys. Attackers configure
+      a malicious executable as the Windows screensaver (.scr) to achieve
+      persistence that activates when the machine is idle — bypassing user
+      session-based defenses.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.70
+    mitre:
+      tactics:
+        - "TA0003"  # Persistence
+      techniques:
+        - "T1546.002"  # Event Triggered Execution: Screensaver
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "registry"
+          field: "key_path"
+          operator: "contains"
+          value: "Control Panel\\Desktop"
+        - monitor: "registry"
+          field: "value_name"
+          operator: "contains_any"
+          values:
+            - "SCRNSAVE.EXE"
+            - "ScreenSaveActive"
+            - "ScreenSaverIsSecure"
+    references:
+      - "https://attack.mitre.org/techniques/T1546/002/"
+
+  - rule_id: "R022"
+    name: "Startup Folder Modification"
+    description: >
+      Detects files added to Windows Startup folders — the simplest
+      persistence mechanism, where programs placed here run automatically
+      when any user logs in.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.70
+    mitre:
+      tactics:
+        - "TA0003"  # Persistence
+      techniques:
+        - "T1547.001"  # Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "file"
+          field: "change_type"
+          operator: "in"
+          values: ["created", "modified"]
+        - monitor: "file"
+          field: "file_path"
+          operator: "contains_any"
+          values:
+            - "\\Start Menu\\Programs\\Startup\\"
+            - "Microsoft\\Windows\\Start Menu\\Programs\\StartUp"
+            - "\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\"
+    false_positive_hints:
+      - "Software installers add shortcuts to the startup folder"
+      - "Legitimate auto-starting tools (chat apps, cloud sync) use startup folder"
+    references:
+      - "https://attack.mitre.org/techniques/T1547/001/"
+
+  - rule_id: "R023"
+    name: "Hosts File Modification"
+    description: >
+      Detects changes to the Windows hosts file (C:\Windows\System32\drivers\etc\hosts).
+      Attackers modify this file to redirect domain lookups for security tools,
+      update servers, or banking sites to attacker-controlled servers — a classic
+      technique for both malware evasion and DNS hijacking attacks.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.80
+    mitre:
+      tactics:
+        - "TA0005"  # Defense Evasion
+        - "TA0040"  # Impact
+      techniques:
+        - "T1565.001"  # Data Manipulation: Stored Data Manipulation
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "file"
+          field: "file_path"
+          operator: "contains"
+          value: "System32\\drivers\\etc\\hosts"
+        - monitor: "file"
+          field: "change_type"
+          operator: "in"
+          values: ["created", "modified"]
+    explanation:
+      user_friendly: >
+        The Windows hosts file — which controls how your computer resolves
+        website addresses — was modified. Attackers change this file to block
+        security software updates, redirect you to fake banking websites, or
+        prevent security tools from contacting their servers.
+      technical: >
+        Write to %SystemRoot%\System32\drivers\etc\hosts detected.
+        Process: {process_name} (PID {pid}). Hosts file modification can
+        redirect DNS lookups for security tools, update servers, or financial
+        sites to attacker-controlled endpoints.
+    false_positive_hints:
+      - "VPN software may modify the hosts file"
+      - "Development tools (e.g., Docker Desktop) add entries to hosts file"
+      - "parental control software uses hosts file for blocking"
+    references:
+      - "https://attack.mitre.org/techniques/T1565/001/"
+
+  - rule_id: "R024"
+    name: "WMI Event Subscription Persistence"
+    description: >
+      Detects creation of WMI (Windows Management Instrumentation) event
+      subscriptions — a sophisticated, fileless persistence mechanism that
+      survives reboots without any files on disk, making it invisible to
+      basic file-based scanning.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.75
+    mitre:
+      tactics:
+        - "TA0003"  # Persistence
+      techniques:
+        - "T1546.003"  # Event Triggered Execution: Windows Management Instrumentation
+    detection:
+      condition: "any"
+      rules:
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "__EventFilter"
+            - "__EventConsumer"
+            - "__FilterToConsumerBinding"
+            - "CommandLineEventConsumer"
+            - "ActiveScriptEventConsumer"
+          case_sensitive: false
+    references:
+      - "https://attack.mitre.org/techniques/T1546/003/"
+
+  - rule_id: "R025"
+    name: "Process Hollowing Indicators"
+    description: >
+      Detects indicators of process hollowing — where a legitimate process
+      is started in a suspended state, its memory is replaced with malicious
+      code, and then it's resumed. The result is malware running under the
+      identity of a legitimate process (e.g., explorer.exe, svchost.exe).
+    enabled: true
+    severity: HIGH
+    confidence: 0.70
+    mitre:
+      tactics:
+        - "TA0005"  # Defense Evasion
+        - "TA0004"  # Privilege Escalation
+      techniques:
+        - "T1055.012"  # Process Injection: Process Hollowing
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "process"
+          field: "process_name"
+          operator: "in"
+          values: ["svchost.exe", "explorer.exe", "lsass.exe", "services.exe",
+                   "winlogon.exe", "csrss.exe"]
+        - monitor: "process"
+          field: "parent_name"
+          operator: "not in"
+          values: ["services.exe", "wininit.exe", "winlogon.exe",
+                   "explorer.exe", "userinit.exe"]
+    false_positive_hints:
+      - "Some anti-cheat and DRM software uses process memory manipulation"
+      - "Virtualization products may appear similar to process hollowing"
+    references:
+      - "https://attack.mitre.org/techniques/T1055/012/"
+
+  - rule_id: "R026"
+    name: "Uncommon Listening Port"
+    description: >
+      Detects non-system processes opening listening ports on unusual port
+      numbers. Backdoors and RATs (Remote Access Tools) often bind to listening
+      ports to await inbound connections from attacker infrastructure.
+    enabled: true
+    severity: MEDIUM
+    confidence: 0.65
+    mitre:
+      tactics:
+        - "TA0011"  # Command and Control
+      techniques:
+        - "T1571"  # Non-Standard Port
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "network"
+          field: "direction"
+          operator: "equals"
+          value: "listening"
+        - monitor: "network"
+          field: "local_port"
+          operator: "greater_than"
+          value: 1024
+        - monitor: "process"
+          field: "process_name"
+          operator: "not contains_any"
+          values:
+            - "svchost.exe"
+            - "system"
+            - "python.exe"     # Common dev server
+            - "node.exe"       # Common dev server
+          case_sensitive: false
+    false_positive_hints:
+      - "Development web servers and APIs listen on high ports"
+      - "Gaming servers and peer-to-peer applications use various ports"
+      - "Remote desktop and screen sharing tools bind to ports"
+    references:
+      - "https://attack.mitre.org/techniques/T1571/"
+
+
+  # ===========================================================================
+  # LOW SEVERITY / INFORMATIONAL RULES (R027–R030)
+  # ===========================================================================
+
+  - rule_id: "R027"
+    name: "Bulk File Read Operations"
+    description: >
+      Detects processes reading a large number of files in a short period —
+      a pattern consistent with data staging before exfiltration. An attacker
+      who has access to a system may enumerate and read files before sending
+      them to an external server.
+    enabled: true
+    severity: LOW
+    confidence: 0.50
+    mitre:
+      tactics:
+        - "TA0009"  # Collection
+      techniques:
+        - "T1005"  # Data from Local System
+    detection:
+      condition: "threshold"
+      threshold:
+        count: 100
+        window_seconds: 5
+      rules:
+        - monitor: "file"
+          field: "change_type"
+          operator: "equals"
+          value: "modified"
+    false_positive_hints:
+      - "Antivirus scans read large numbers of files"
+      - "Search indexing (Windows Search, Everything) reads many files"
+      - "Backup software reads all files during backup operations"
+    references:
+      - "https://attack.mitre.org/techniques/T1005/"
+
+  - rule_id: "R028"
+    name: "High-Frequency Clipboard Access"
+    description: >
+      Detects processes accessing the clipboard at unusually high frequency.
+      Some malware monitors clipboard content to steal cryptocurrency addresses,
+      passwords, or sensitive text the user copies. Keyloggers and banking
+      trojans frequently implement clipboard monitoring.
+    enabled: true
+    severity: LOW
+    confidence: 0.50
+    mitre:
+      tactics:
+        - "TA0009"  # Collection
+      techniques:
+        - "T1115"  # Clipboard Data
+    detection:
+      condition: "threshold"
+      threshold:
+        count: 20
+        window_seconds: 60
+      rules:
+        - monitor: "process"
+          field: "event_type"
+          operator: "equals"
+          value: "process.anomaly"
+        - monitor: "process"
+          field: "tags"
+          operator: "contains"
+          value: "clipboard_access"
+    false_positive_hints:
+      - "Password managers legitimately access clipboard for auto-fill"
+      - "Clipboard manager utilities (e.g., Ditto, Clipchamp) monitor clipboard"
+      - "Note-taking apps may frequently access clipboard"
+    references:
+      - "https://attack.mitre.org/techniques/T1115/"
+
+  - rule_id: "R029"
+    name: "USB Removable Media Connected"
+    description: >
+      Informational alert when USB removable media is connected.
+      USB drives are used for both physical data exfiltration and as an
+      initial infection vector (infected USB drops, BadUSB attacks).
+      Logged for inventory and audit purposes.
+    enabled: true
+    severity: LOW
+    confidence: 0.30
+    mitre:
+      tactics:
+        - "TA0010"  # Exfiltration
+        - "TA0001"  # Initial Access
+      techniques:
+        - "T1091"  # Replication Through Removable Media
+    detection:
+      condition: "all"
+      rules:
+        - monitor: "system"
+          field: "subsystem"
+          operator: "equals"
+          value: "usb"
+        - monitor: "system"
+          field: "device_type"
+          operator: "equals"
+          value: "disk"
+    explanation:
+      user_friendly: >
+        A USB storage device was connected to your computer:
+        '{device_name}' ({volume_size_mb}MB).
+        This is logged for security awareness. Be cautious with USB drives
+        from unknown sources — they can contain malware that activates automatically.
+      technical: >
+        Removable media event: device={device_name}, drive={drive_letter},
+        size={volume_size_bytes}, label={volume_name}. USB vector used for
+        both exfiltration (T1052) and initial access (T1091).
+    false_positive_hints:
+      - "USB connections are normal user activity"
+      - "This is informational only — most USB connections are legitimate"
+    references:
+      - "https://attack.mitre.org/techniques/T1091/"
+
+  - rule_id: "R030"
+    name: "Network Share Enumeration"
+    description: >
+      Detects enumeration of network shares — often the first step an
+      attacker takes after gaining access to understand what resources are
+      available on the network. Worms also enumerate shares to spread laterally.
+    enabled: true
+    severity: LOW
+    confidence: 0.55
+    mitre:
+      tactics:
+        - "TA0007"  # Discovery
+      techniques:
+        - "T1135"  # Network Share Discovery
+    detection:
+      condition: "any"
+      rules:
+        - monitor: "process"
+          field: "command_line"
+          operator: "contains_any"
+          values:
+            - "net view"
+            - "net share"
+            - "net use"
+            - "Get-SmbShare"
+            - "Get-SmbConnection"
+          case_sensitive: false
+        - monitor: "process"
+          field: "process_name"
+          operator: "equals"
+          value: "net.exe"
+          case_sensitive: false
+    false_positive_hints:
+      - "System administrators use net commands for legitimate management"
+      - "Backup software discovers network shares for remote backup"
+      - "IT inventory tools enumerate network resources"
+    references:
+      - "https://attack.mitre.org/techniques/T1135/"

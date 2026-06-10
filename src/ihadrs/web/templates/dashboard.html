@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IHADRS — Security Dashboard</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+</head>
+<body>
+  <!-- ====== HEADER ====== -->
+  <header class="app-header">
+    <div class="header-left">
+      <span class="logo">🛡️ IHADRS</span>
+      <span class="version" id="version-badge">v—</span>
+    </div>
+    <div class="header-center">
+      <div class="status-pill" id="connection-status">
+        <span class="status-dot"></span>
+        <span class="status-text">Connecting…</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="clock" class="clock"></span>
+      <button class="btn btn-ghost" id="settings-toggle" title="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <!-- ====== NAV TABS ====== -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+    <button class="tab-btn" data-tab="alerts">🚨 Alerts <span class="badge" id="alert-badge">0</span></button>
+    <button class="tab-btn" data-tab="events">📋 Events</button>
+    <button class="tab-btn" data-tab="rules">🔧 Rules</button>
+  </nav>
+
+  <!-- ====== MAIN CONTENT ====== -->
+  <main class="content">
+
+    <!-- ── OVERVIEW TAB ─────────────────────────────── -->
+    <section id="tab-overview" class="tab-panel active">
+      <!-- Metric cards -->
+      <div class="metric-row">
+        <div class="metric-card critical">
+          <div class="metric-icon">🔴</div>
+          <div class="metric-body">
+            <div class="metric-value" id="m-critical">—</div>
+            <div class="metric-label">Critical</div>
+          </div>
+        </div>
+        <div class="metric-card high">
+          <div class="metric-icon">🟠</div>
+          <div class="metric-body">
+            <div class="metric-value" id="m-high">—</div>
+            <div class="metric-label">High</div>
+          </div>
+        </div>
+        <div class="metric-card medium">
+          <div class="metric-icon">🟡</div>
+          <div class="metric-body">
+            <div class="metric-value" id="m-medium">—</div>
+            <div class="metric-label">Medium</div>
+          </div>
+        </div>
+        <div class="metric-card low">
+          <div class="metric-icon">🟢</div>
+          <div class="metric-body">
+            <div class="metric-value" id="m-low">—</div>
+            <div class="metric-label">Low</div>
+          </div>
+        </div>
+        <div class="metric-card neutral">
+          <div class="metric-icon">⚡</div>
+          <div class="metric-body">
+            <div class="metric-value" id="m-eps">—</div>
+            <div class="metric-label">Events/sec</div>
+          </div>
+        </div>
+        <div class="metric-card neutral">
+          <div class="metric-icon">📡</div>
+          <div class="metric-body">
+            <div class="metric-value" id="m-rules">—</div>
+            <div class="metric-label">Active Rules</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monitor health + Category breakdown side by side -->
+      <div class="two-col">
+        <div class="card">
+          <div class="card-header">Monitor Status</div>
+          <div class="card-body">
+            <table class="data-table" id="monitor-table">
+              <thead><tr><th>Monitor</th><th>Status</th><th>Events</th><th>Errors</th></tr></thead>
+              <tbody><tr><td colspan="4" class="empty">Connecting…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">Threats by Category (24h)</div>
+          <div class="card-body">
+            <div id="category-bars"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent threats mini-feed -->
+      <div class="card">
+        <div class="card-header">
+          Recent Detections
+          <button class="btn btn-xs" onclick="switchTab('alerts')">View All →</button>
+        </div>
+        <div class="card-body">
+          <table class="data-table" id="recent-threats-table">
+            <thead><tr><th>Time</th><th>Severity</th><th>Category</th><th>Resource</th><th>Confidence</th></tr></thead>
+            <tbody><tr><td colspan="5" class="empty">No threats detected yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── ALERTS TAB ───────────────────────────────── -->
+    <section id="tab-alerts" class="tab-panel">
+      <div class="toolbar">
+        <input type="text" id="alert-search" class="search-box" placeholder="🔍  Search alerts…" oninput="filterAlerts()" />
+        <select id="alert-sev-filter" class="filter-select" onchange="filterAlerts()">
+          <option value="">All Severities</option>
+          <option value="CRITICAL">🔴 Critical</option>
+          <option value="HIGH">🟠 High</option>
+          <option value="MEDIUM">🟡 Medium</option>
+          <option value="LOW">🟢 Low</option>
+        </select>
+        <label class="checkbox-label">
+          <input type="checkbox" id="show-fp" onchange="filterAlerts()" /> Show FP
+        </label>
+        <button class="btn btn-xs" onclick="exportAlerts()">📄 Export JSON</button>
+      </div>
+
+      <div class="split-panel">
+        <!-- Alert list -->
+        <div class="split-left">
+          <table class="data-table selectable" id="alerts-table">
+            <thead><tr><th>Time</th><th>Severity</th><th>Category</th><th>Resource</th></tr></thead>
+            <tbody><tr><td colspan="4" class="empty">No alerts.</td></tr></tbody>
+          </table>
+          <div class="table-footer" id="alerts-count">0 alerts</div>
+        </div>
+
+        <!-- Alert detail -->
+        <div class="split-right" id="alert-detail">
+          <div class="detail-placeholder">
+            <div class="placeholder-icon">🔍</div>
+            <div class="placeholder-text">Select an alert to view details</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── EVENTS TAB ───────────────────────────────── -->
+    <section id="tab-events" class="tab-panel">
+      <div class="toolbar">
+        <input type="text" id="event-search" class="search-box" placeholder="🔍  Search events…" oninput="filterEvents()" />
+        <button class="btn btn-xs" onclick="clearEvents()">🗑 Clear</button>
+        <button class="btn btn-xs" onclick="exportEvents()">📄 Export</button>
+      </div>
+      <table class="data-table" id="events-table">
+        <thead><tr><th>Timestamp</th><th>Type</th><th>Source</th><th>Details</th></tr></thead>
+        <tbody><tr><td colspan="4" class="empty">No events. Start the IHADRS daemon first.</td></tr></tbody>
+      </table>
+      <div class="table-footer" id="events-count">0 events</div>
+    </section>
+
+    <!-- ── RULES TAB ────────────────────────────────── -->
+    <section id="tab-rules" class="tab-panel">
+      <div class="toolbar">
+        <input type="text" id="rule-search" class="search-box" placeholder="🔍  Search rules…" oninput="filterRules()" />
+        <span id="rules-count" class="table-footer" style="margin:0 8px;">0 rules</span>
+      </div>
+      <table class="data-table" id="rules-table">
+        <thead><tr><th>Rule ID</th><th>Name</th><th>Severity</th><th>Category</th><th>Techniques</th><th>Enabled</th></tr></thead>
+        <tbody><tr><td colspan="6" class="empty">Loading rules…</td></tr></tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <!-- ====== SETTINGS DRAWER ====== -->
+  <div class="settings-drawer" id="settings-drawer">
+    <div class="drawer-header">
+      <span>⚙️ Settings</span>
+      <button class="btn btn-ghost" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <label class="form-label">API URL</label>
+      <input type="text" id="cfg-url" class="form-input" placeholder="http://127.0.0.1:8765" />
+
+      <label class="form-label">API Token</label>
+      <input type="password" id="cfg-token" class="form-input" placeholder="Leave empty if auth disabled" />
+
+      <label class="form-label">Poll Interval (ms)</label>
+      <input type="number" id="cfg-interval" class="form-input" value="3000" min="500" max="30000" step="500" />
+
+      <button class="btn btn-primary" onclick="saveSettings()">💾 Save &amp; Reconnect</button>
+      <button class="btn btn-ghost" onclick="testConnection()">🔗 Test Connection</button>
+      <div id="cfg-result" class="cfg-result"></div>
+
+      <div class="drawer-section">
+        <div class="drawer-section-title">SecureOps SOC Export</div>
+
+        <label class="checkbox-label">
+          <input type="checkbox" id="soc-enabled" />
+          Enable SOC export
+        </label>
+
+        <label class="form-label">SecureOps API Base URL</label>
+        <input
+          type="text"
+          id="soc-base-url"
+          class="form-input"
+          placeholder="http://127.0.0.1:8000/api/v1"
+        />
+
+        <label class="form-label">EDR Ingest Key</label>
+        <input
+          type="password"
+          id="soc-ingest-key"
+          class="form-input"
+          autocomplete="off"
+          placeholder="Paste SecureOps EDR ingest key"
+        />
+        <div class="field-hint">Saved keys are protected with Windows DPAPI and are never shown again.</div>
+
+        <label class="checkbox-label">
+          <input type="checkbox" id="soc-allow-http" checked />
+          Allow HTTP lab mode
+        </label>
+
+        <div class="status-grid">
+          <div class="status-tile"><div class="status-tile-label">State</div><div class="status-tile-value" id="soc-state">Loading</div></div>
+          <div class="status-tile"><div class="status-tile-label">Queue</div><div class="status-tile-value" id="soc-queue-depth">0</div></div>
+          <div class="status-tile"><div class="status-tile-label">High/Critical</div><div class="status-tile-value" id="soc-high-critical">0</div></div>
+          <div class="status-tile"><div class="status-tile-label">Last Upload</div><div class="status-tile-value" id="soc-last-upload">Never</div></div>
+        </div>
+
+        <div class="status-tile">
+          <div class="status-tile-label">Last Error</div>
+          <div class="status-tile-value" id="soc-last-error">None</div>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveSecureOpsSettings()">Save SOC Settings</button>
+        <button class="btn btn-ghost" onclick="testSecureOpsConnection()">Test SOC Connection</button>
+        <div id="soc-result" class="cfg-result"></div>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-overlay hidden" id="drawer-overlay" onclick="closeSettings()"></div>
+
+  <!-- ====== TOAST ====== -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

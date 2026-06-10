@@ -1,0 +1,399 @@
+# =============================================================================
+# IHADRS — settings.yaml
+# Intelligent Host-Based Attack Detection and Response System
+# Configuration File
+#
+# All values here can be overridden by environment variables.
+# See .env.example for the full list of environment variable overrides.
+#
+# IMPORTANT: Sensitive values (passwords, API tokens) should NOT be
+# stored here. Use environment variables or a secrets manager instead.
+# =============================================================================
+
+
+# =============================================================================
+# APPLICATION
+# =============================================================================
+app:
+  name: "IHADRS"
+  # data_dir: Where the event database and runtime data are stored.
+  # Windows default: C:/ProgramData/IHADRS/data
+  # Change this for multi-user or custom deployment scenarios.
+  data_dir: "./data"
+
+  # Refuse to start without Administrator/root privileges.
+  # Set to false only for development/testing on non-sensitive systems.
+  require_admin: true
+
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+logging:
+  # Log verbosity. DEBUG includes verbose event tracing.
+  # Production: INFO | Development: DEBUG
+  level: "INFO"
+
+  # Directory for log files (created automatically)
+  log_dir: "./logs"
+
+  # Emit structured JSON lines (recommended for SIEM integration)
+  # Set to false for human-readable plain text logs
+  json_format: true
+
+  # Print log lines to the terminal
+  console_output: true
+
+  # Rotate log files when they reach this size
+  rotation_size: "50 MB"
+
+  # Delete rotated log files older than N days
+  retention_days: 30
+
+  # Compress rotated files: "gz" | "zip" | "bz2"
+  compression: "gz"
+
+
+# =============================================================================
+# MONITORS — What IHADRS watches
+# =============================================================================
+monitors:
+  # List of monitors to run. Remove a name to disable that monitor.
+  # Available: process, network, file, registry, service, authentication, wmi
+  # - registry: Windows only
+  # - service: Windows only
+  # - wmi: Windows only (advanced, requires WMI package)
+  enabled_monitors:
+    - process
+    - network
+    - file
+    - registry        # Windows only — comment out on Linux
+    - service         # Windows only — comment out on Linux
+    - authentication
+
+  # Polling intervals (seconds)
+  # Lower = more responsive detection, higher = less CPU usage
+  process_poll_interval: 1.0      # Process list refresh (1 second)
+  network_poll_interval: 2.0      # Network connections refresh (2 seconds)
+  service_poll_interval: 5.0      # Service list refresh (5 seconds)
+  auth_poll_interval: 2.0         # Authentication events check (2 seconds)
+
+  # Directories monitored for file system changes
+  # Supports environment variable expansion on Windows: %USERPROFILE%
+  file_watch_paths:
+    - "%USERPROFILE%\\Documents"
+    - "%USERPROFILE%\\Desktop"
+    - "%USERPROFILE%\\Downloads"
+    - "%TEMP%"
+    - "%APPDATA%"
+    - "%LOCALAPPDATA%"
+    - "C:\\Windows\\System32\\drivers\\etc"
+    - "C:\\Windows\\Prefetch"
+  file_watch_recursive: true
+
+  # Processes that should NEVER be flagged by any detection rule.
+  # Use sparingly — only for known-safe enterprise software that
+  # triggers false positives. Applies to process name matching.
+  process_baseline_whitelist: []
+    # Uncomment and add entries to whitelist specific processes:
+    # - "my_legitimate_tool.exe"
+
+  # IP addresses/CIDRs that should never trigger network alerts.
+  # E.g., internal monitoring systems, known-safe corporate proxies.
+  ip_whitelist: []
+    # Uncomment and add entries to whitelist specific IPs:
+    # - "10.0.0.1"
+    # - "192.168.1.0/24"
+
+
+# =============================================================================
+# DETECTION ENGINE
+# =============================================================================
+detection:
+  # Path to the detection rules file
+  rules_file: "config/rules.yaml"
+
+  # To only run specific rules (leave empty to run all):
+  enabled_rules: []
+
+  # Rules to disable (false positive suppression).
+  # Add rule IDs here when a rule fires too often on your system.
+  # Example: ["R029"] to disable USB device alerts
+  disabled_rules: []
+
+  # Time windows for behavioral pattern detection
+  behavioral_window_seconds: 60     # Sliding window for pattern analysis
+  correlation_window_seconds: 300   # Cross-event correlation window (5 min)
+
+  # Ransomware detection thresholds
+  ransomware_rename_threshold: 20   # File renames with crypto extensions
+  ransomware_time_window_seconds: 10.0
+
+  # Brute force detection
+  brute_force_failure_threshold: 20  # Failed logins
+  brute_force_time_window_seconds: 120.0
+
+  # Bulk file read (data staging detection)
+  bulk_file_read_threshold: 500     # File reads
+  bulk_file_read_window_seconds: 30.0
+
+  # C2 beaconing detection sensitivity
+  c2_beacon_min_interval_seconds: 30   # Ignore connections more frequent than 30s
+  c2_beacon_max_jitter_pct: 0.15       # Flag patterns with <15% timing variation
+
+  # Automatic false positive reduction based on whitelists
+  false_positive_suppression: true
+
+
+# =============================================================================
+# MACHINE LEARNING
+# =============================================================================
+ml:
+  # Enable ML-based behavioral anomaly detection
+  # Requires baseline training: python -m ihadrs train
+  enabled: true
+
+  # Path to trained Isolation Forest model
+  model_path: "config/baseline_model.pkl"
+
+  # Initial baseline training duration (seconds)
+  # 600 = 10 minutes (minimum recommended)
+  # 1800 = 30 minutes (better coverage of normal behavior)
+  baseline_duration_seconds: 600
+
+  # How often to retrain on new behavioral data (days)
+  retrain_interval_days: 7
+
+  # Anomaly detection sensitivity
+  # Range: -1.0 (flag almost everything) to 0.0 (flag almost nothing)
+  # Default: -0.5 (balanced)
+  anomaly_threshold: -0.5
+
+  # Ignore processes younger than this (avoids FPs on legitimate launchers)
+  min_process_lifetime_seconds: 30
+
+  # Isolation Forest hyperparameters (advanced)
+  n_estimators: 100
+  contamination: 0.05     # Expected fraction of anomalies in training data
+  max_samples: 256
+  random_state: 42
+
+  # Feature collection interval (seconds)
+  feature_collection_interval_seconds: 5.0
+
+
+# =============================================================================
+# RESPONSE SYSTEM
+# =============================================================================
+response:
+  # How IHADRS reacts to detected threats:
+  #   manual    — Detect and alert only. Never take automated action.
+  #   semi_auto — Show confirmation dialog; auto-execute after timeout.
+  #   full_auto — Execute immediately without asking (for CRITICAL threats).
+  mode: "semi_auto"
+
+  # In semi_auto mode: seconds before auto-executing (countdown shown in UI)
+  confirmation_timeout_seconds: 10
+
+  # Which severity levels trigger automated response
+  # In semi_auto: these will auto-execute after timeout
+  # In manual: only logged, never executed
+  auto_respond_severities:
+    - CRITICAL
+
+  # Path to response playbooks
+  playbooks_file: "config/playbooks.yaml"
+
+  # Maximum simultaneous response actions (prevents thrashing)
+  max_concurrent_responses: 3
+
+  # Automatically roll back response actions when user marks event as FP
+  rollback_on_false_positive: true
+
+
+# =============================================================================
+# ALERTING
+# =============================================================================
+alerting:
+  # Show OS-native desktop notifications (Windows toast / Linux notify)
+  desktop_notifications: true
+
+  # Print alerts to the terminal with color and formatting
+  console_output: true
+
+  # Minimum severity for console/desktop notifications
+  min_severity_console: "LOW"
+  min_severity_desktop: "MEDIUM"
+
+  # Rate limiting — max alerts per minute (prevents alert fatigue)
+  max_alerts_per_minute: 10
+
+  # Suppress duplicate alerts for this many seconds
+  alert_cooldown_seconds: 60
+
+  # --- Email Alerts (optional) ---
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    use_tls: true
+    # Set credentials via environment variables:
+    # IHADRS_SMTP_USERNAME / IHADRS_SMTP_PASSWORD
+    username: ""
+    from_address: ""
+    to_addresses: []
+    min_severity: "CRITICAL"   # Only email for critical threats
+
+  # --- Webhook Alerts (optional) ---
+  # Works with Slack, Teams, Discord, PagerDuty, and custom endpoints.
+  webhook:
+    enabled: false
+    url: ""
+    # IHADRS_WEBHOOK_SECRET for HMAC signing
+    timeout_seconds: 10
+    min_severity: "HIGH"
+    retry_attempts: 3
+    retry_delay_seconds: 2.0
+
+
+# =============================================================================
+# STORAGE
+# =============================================================================
+storage:
+  # SQLite database path
+  db_path: "./data/ihadrs.db"
+
+  # WAL mode improves concurrent read/write performance
+  wal_mode: true
+
+  # Maximum stored events (oldest pruned when exceeded)
+  max_events: 1000000
+
+  # Keep events for N days (then prune)
+  prune_keep_days: 90
+
+  # Keep audit log for N days (regulatory compliance)
+  audit_retention_days: 365
+
+
+# =============================================================================
+# REST API
+# =============================================================================
+api:
+  # Enable the REST API server
+  enabled: true
+
+  # Bind to localhost only (127.0.0.1) for security.
+  # Change to "0.0.0.0" only if you need remote access
+  # and have properly secured the endpoint.
+  host: "127.0.0.1"
+  port: 8765
+
+  # Authentication token. Set this to any password you choose.
+  # The same token must be entered in the web dashboard Settings (gear icon).
+  # Leave as "ihadrs-changeme" or change it to anything you want.
+  # To disable auth completely, set token to "" (empty string)
+  token: "ihadrs"
+
+  cors_origins:
+    - "*"
+
+  rate_limit_requests: 100
+  rate_limit_window_seconds: 60
+
+
+# =============================================================================
+# SECUREOPS SOC EXPORT
+# =============================================================================
+secureops:
+  # Push IHADRS detections into SecureOps using the EDR ingest API.
+  # This can also be toggled from the dashboard settings drawer.
+  enabled: false
+
+  # SecureOps API base URL. Keep the /api/v1 suffix.
+  # Same machine: http://127.0.0.1:8000/api/v1
+  # LAN machine:   http://192.168.1.9:8000/api/v1
+  api_base_url: "http://127.0.0.1:8000/api/v1"
+
+  # HTTP is allowed for local lab/dev mode only. Use HTTPS in production.
+  allow_http_lab: true
+
+  # Local outbound queue for unsent SOC alerts.
+  queue_db_path: "./data/secureops_queue.db"
+
+  # Network timeout for SecureOps requests.
+  timeout_seconds: 10
+
+  # Upload one queued alert to /alerts, or multiple queued alerts to /alerts/batch.
+  max_batch_size: 50
+
+  # Exponential backoff used after 500/503/network failures.
+  retry_backoff_seconds:
+    - 10
+    - 30
+    - 120
+    - 300
+    - 900
+
+  # Do not store the ingest key in this YAML file.
+  # The dashboard saves it with Windows DPAPI, or you can provide it temporarily
+  # with IHADRS_SECUREOPS_INGEST_KEY.
+
+
+# =============================================================================
+# PERFORMANCE TUNING
+# =============================================================================
+performance:
+  # Maximum events buffered in memory queue
+  event_queue_size: 10000
+
+  # Global events-per-second cap across all monitors
+  max_events_per_second: 1000
+
+  # CPU budget — system-wide CPU percentage IHADRS should not exceed
+  cpu_budget_average_pct: 50.0    # Average over 60 seconds
+  cpu_budget_peak_pct: 95.0      # Short burst maximum
+
+  # Memory budget
+  ram_budget_baseline_mb: 200     # Expected RAM at idle
+  ram_budget_max_mb: 2000         # Hard limit — triggers GC and cache eviction
+
+  # Detection latency target
+  detection_latency_target_seconds: 2.0
+
+
+# =============================================================================
+# THREAT INTELLIGENCE (OPTIONAL)
+# =============================================================================
+threat_intelligence:
+  # Enable real-time IOC lookups against external services
+  # Requires internet access and API keys set via environment variables
+  enable_online_lookups: false
+
+  # API keys — set via environment variables, NOT here:
+  # IHADRS_VIRUSTOTAL_API_KEY
+  # IHADRS_ABUSEIPDB_API_KEY
+  # IHADRS_OTX_API_KEY
+
+  lookup_timeout_seconds: 10.0
+  mitre_mapping_file: "config/mitre_mapping.yaml"
+  ioc_database_path: "./data/iocs.db"
+
+
+# =============================================================================
+# SECURITY (IHADRS self-protection)
+# =============================================================================
+security:
+  # Require a password to disable IHADRS via CLI
+  # Prevents malware from easily stopping IHADRS
+  require_password_to_disable: false
+
+  # Verify IHADRS binaries haven't been tampered with
+  file_integrity_check: true
+
+  # Record all IHADRS actions in the audit log
+  audit_logging: true
+
+  # Cryptographically sign audit log entries
+  # Requires IHADRS_SECRET_KEY environment variable
+  audit_log_signed: false

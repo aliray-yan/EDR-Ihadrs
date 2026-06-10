@@ -1,0 +1,624 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ihadrs.io/config/schema.json",
+  "title": "IHADRS Configuration Schema",
+  "description": "JSON Schema for validating IHADRS settings.yaml configuration files.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "instance_id": {
+          "type": "string"
+        },
+        "data_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "require_admin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR",
+            "CRITICAL",
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "critical"
+          ]
+        },
+        "log_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "events_file": {
+          "type": "string"
+        },
+        "debug_file": {
+          "type": "string"
+        },
+        "rotation_size": {
+          "type": "string"
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "compression": {
+          "type": "string",
+          "enum": [
+            "gz",
+            "zip",
+            "bz2"
+          ]
+        },
+        "json_format": {
+          "type": "boolean"
+        },
+        "console_output": {
+          "type": "boolean"
+        }
+      }
+    },
+    "monitors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled_monitors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "process",
+              "network",
+              "file",
+              "registry",
+              "service",
+              "wmi",
+              "etw",
+              "authentication"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "process_poll_interval": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 60
+        },
+        "network_poll_interval": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 60
+        },
+        "service_poll_interval": {
+          "type": "number",
+          "minimum": 1.0,
+          "maximum": 300
+        },
+        "auth_poll_interval": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 60
+        },
+        "file_watch_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "file_watch_recursive": {
+          "type": "boolean"
+        },
+        "process_baseline_whitelist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ip_whitelist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rules_file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "disabled_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "behavioral_window_seconds": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 3600
+        },
+        "correlation_window_seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600
+        },
+        "ransomware_rename_threshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ransomware_time_window_seconds": {
+          "type": "number",
+          "minimum": 1
+        },
+        "brute_force_failure_threshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "brute_force_time_window_seconds": {
+          "type": "number",
+          "minimum": 1
+        },
+        "bulk_file_read_threshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bulk_file_read_window_seconds": {
+          "type": "number",
+          "minimum": 1
+        },
+        "c2_beacon_min_interval_seconds": {
+          "type": "integer",
+          "minimum": 5
+        },
+        "c2_beacon_max_jitter_pct": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1.0
+        },
+        "false_positive_suppression": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ml": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "model_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseline_duration_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 86400
+        },
+        "retrain_interval_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "anomaly_threshold": {
+          "type": "number",
+          "minimum": -1.0,
+          "maximum": 0.0
+        },
+        "min_process_lifetime_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "n_estimators": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 1000
+        },
+        "contamination": {
+          "type": "number",
+          "minimum": 0.001,
+          "maximum": 0.5
+        },
+        "max_samples": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 10000
+        },
+        "random_state": {
+          "type": "integer"
+        },
+        "feature_collection_interval_seconds": {
+          "type": "number",
+          "minimum": 1.0,
+          "maximum": 60.0
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "semi_auto",
+            "full_auto"
+          ]
+        },
+        "confirmation_timeout_seconds": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 300
+        },
+        "auto_respond_severities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
+          }
+        },
+        "playbooks_file": {
+          "type": "string"
+        },
+        "max_concurrent_responses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "rollback_on_false_positive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "alerting": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "desktop_notifications": {
+          "type": "boolean"
+        },
+        "console_output": {
+          "type": "boolean"
+        },
+        "min_severity_console": {
+          "type": "string",
+          "enum": [
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL"
+          ]
+        },
+        "min_severity_desktop": {
+          "type": "string",
+          "enum": [
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL"
+          ]
+        },
+        "max_alerts_per_minute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "alert_cooldown_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "email": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "smtp_host": {
+              "type": "string"
+            },
+            "smtp_port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "use_tls": {
+              "type": "boolean"
+            },
+            "username": {
+              "type": "string"
+            },
+            "from_address": {
+              "type": "string"
+            },
+            "to_addresses": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "min_severity": {
+              "type": "string",
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH",
+                "CRITICAL"
+              ]
+            }
+          }
+        },
+        "webhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string"
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "min_severity": {
+              "type": "string",
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH",
+                "CRITICAL"
+              ]
+            },
+            "retry_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "retry_delay_seconds": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 30
+            }
+          }
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "db_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wal_mode": {
+          "type": "boolean"
+        },
+        "max_events": {
+          "type": "integer",
+          "minimum": 1000
+        },
+        "prune_keep_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "audit_retention_days": {
+          "type": "integer",
+          "minimum": 30
+        }
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        },
+        "token": {
+          "type": "string"
+        },
+        "cors_origins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "page_size_default": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "page_size_max": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "rate_limit_requests": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "rate_limit_window_seconds": {
+          "type": "integer",
+          "minimum": 10
+        }
+      }
+    },
+    "secureops": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "api_base_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allow_http_lab": {
+          "type": "boolean"
+        },
+        "queue_db_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "max_batch_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "retry_backoff_seconds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event_queue_size": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 100000
+        },
+        "max_events_per_second": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 100000
+        },
+        "cpu_budget_average_pct": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 95.0
+        },
+        "cpu_budget_peak_pct": {
+          "type": "number",
+          "minimum": 1.0,
+          "maximum": 100.0
+        },
+        "ram_budget_baseline_mb": {
+          "type": "integer",
+          "minimum": 20
+        },
+        "ram_budget_max_mb": {
+          "type": "integer",
+          "minimum": 50
+        },
+        "detection_latency_target_seconds": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 30.0
+        }
+      }
+    },
+    "threat_intelligence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "virustotal_api_key": {
+          "type": "string"
+        },
+        "abuseipdb_api_key": {
+          "type": "string"
+        },
+        "otx_api_key": {
+          "type": "string"
+        },
+        "mitre_mapping_file": {
+          "type": "string"
+        },
+        "ioc_database_path": {
+          "type": "string"
+        },
+        "enable_online_lookups": {
+          "type": "boolean"
+        },
+        "lookup_timeout_seconds": {
+          "type": "number",
+          "minimum": 1.0,
+          "maximum": 60.0
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "require_password_to_disable": {
+          "type": "boolean"
+        },
+        "file_integrity_check": {
+          "type": "boolean"
+        },
+        "audit_logging": {
+          "type": "boolean"
+        },
+        "audit_log_signed": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
